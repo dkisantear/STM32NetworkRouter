@@ -11,7 +11,7 @@ const generateRandomLatency = (base: number, variance: number) => {
   return Math.round(base + (Math.random() - 0.5) * variance);
 };
 
-const HISTORY_LENGTH = 20;
+const HISTORY_LENGTH = 5;
 
 export const useLatencyData = () => {
   const [data, setData] = useState<LatencyData>({

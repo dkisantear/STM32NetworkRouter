@@ -7,7 +7,7 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background p-4 sm:p-8">
-      <div className="max-w-4xl mx-auto space-y-8">
+      <div className="max-w-2xl mx-auto space-y-8">
         {/* Header */}
         <header className="text-center space-y-2">
           <h1 className="text-3xl sm:text-4xl font-bold text-foreground">
@@ -15,8 +15,8 @@ const Index = () => {
           </h1>
         </header>
 
-        {/* Latency Cards Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Latency Cards - Vertical Stack */}
+        <div className="space-y-6">
           <LatencyCard
             serverName="Main Server"
             latency={data.mainServer[data.mainServer.length - 1]}
@@ -33,10 +33,8 @@ const Index = () => {
             history={data.serialServer}
           />
           
-          {/* Status Pill */}
-          <div className="flex items-center justify-center sm:justify-start">
-            <StatusPill connected={data.piConnected} />
-          </div>
+          {/* Status Card */}
+          <StatusPill connected={data.piConnected} />
         </div>
 
         {/* Footer */}
