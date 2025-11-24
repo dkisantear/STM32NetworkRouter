@@ -1,3 +1,4 @@
+import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
 interface StatusPillProps {
@@ -6,16 +7,21 @@ interface StatusPillProps {
 
 export const StatusPill = ({ connected }: StatusPillProps) => {
   return (
-    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-border bg-card shadow-sm">
-      <div
-        className={cn(
-          'w-2 h-2 rounded-full',
-          connected ? 'bg-green-500' : 'bg-red-500'
-        )}
-      />
-      <span className="text-sm font-medium text-foreground">
-        Raspberry Pi Gateway: {connected ? 'Connected' : 'Disconnected'}
-      </span>
-    </div>
+    <Card className="p-6 border border-border rounded-lg shadow-lg">
+      <div className="flex items-center gap-3">
+        <div
+          className={cn(
+            'w-3 h-3 rounded-full',
+            connected ? 'bg-primary shadow-[0_0_12px_hsl(var(--primary))]' : 'bg-destructive shadow-[0_0_12px_hsl(var(--destructive))]'
+          )}
+        />
+        <div>
+          <p className="text-sm font-medium text-foreground">Raspberry Pi Gateway → Azure</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {connected ? 'Connected' : 'Disconnected'}
+          </p>
+        </div>
+      </div>
+    </Card>
   );
 };
