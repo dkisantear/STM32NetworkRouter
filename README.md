@@ -208,3 +208,11 @@ Open [Lovable](https://lovable.dev/projects/d3d1d285-5cd8-4cef-a9fa-294facfba17f
 - Tailwind CSS
 - Azure Static Web Apps
 - Azure Functions
+
+## Azure Static Web Apps API status
+
+- `/api/ping` returns a JSON health payload.
+- `/api/main`, `/api/uart`, `/api/serial` return mock latency stats with fields:
+  `label`, `status`, `samples`, `min`, `max`, `avg`, `updatedAt`.
+- Frontend `useLatency` hook reads from these endpoints and falls back gracefully if offline.
+- Ready for a future update where a Raspberry Pi can POST real latency data into these APIs.

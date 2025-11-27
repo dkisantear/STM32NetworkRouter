@@ -62,15 +62,20 @@ export const useLatency = (server: ServerType): UseLatencyResult => {
       const json = await response.json();
       
       // Validate the response has expected structure
-      if (typeof json.latest !== 'number' || !Array.isArray(json.samples)) {
+      if (!Array.isArray(json.samples)) {
         throw new Error('Invalid response structure');
       }
       
+      // Extract latest from last sample, or use avg as fallback
+      const latest = json.samples.length > 0 
+        ? json.samples[json.samples.length - 1] 
+        : (json.avg ?? null);
+      
       setData({
-        latest: json.latest,
-        min: json.min,
-        max: json.max,
-        avg: json.avg,
+        latest,
+        min: json.min ?? null,
+        max: json.max ?? null,
+        avg: json.avg ?? null,
         samples: json.samples,
         status: 'online',
       });
