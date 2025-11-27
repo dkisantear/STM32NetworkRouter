@@ -1,30 +1,13 @@
-import { AzureFunction, Context, HttpRequest } from "@azure/functions";
+// api/ping/index.ts
 
-const httpTrigger: AzureFunction = async function (
-  context: Context,
-  req: HttpRequest
-): Promise<void> {
-  const headers = {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-  };
-
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    context.res = { status: 204, headers };
-    return;
-  }
-
+export default async function (context: any, req: any): Promise<void> {
   context.res = {
     status: 200,
-    headers,
+    headers: { "Content-Type": "application/json" },
     body: {
-      status: "OK",
-      timestamp: Date.now(),
+      status: "ok",
+      source: "Azure Static Web Apps mock API",
+      ts: new Date().toISOString(),
     },
   };
-};
-
-export default httpTrigger;
+}
