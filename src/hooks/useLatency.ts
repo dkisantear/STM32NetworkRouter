@@ -1,42 +1,90 @@
 import { useState, useEffect, useCallback } from 'react';
 
 type ServerType = 'main' | 'uart' | 'serial';
+type LatencyStatus = 'loading' | 'online' | 'offline';
 
-interface LatencyResponse {
-  latest: number;
-  min: number;
-  max: number;
-  avg: number;
+// Simulated fallback data per server for offline state
+const FALLBACK_DATA: Record<ServerType, number[]> = {
+  main: [30, 35, 40, 32, 38],
+  uart: [25, 28, 33, 27, 31],
+  serial: [45, 42, 50, 48, 44],
+};
+
+interface LatencyData {
+  latest: number | null;
+  min: number | null;
+  max: number | null;
+  avg: number | null;
   samples: number[];
+  status: LatencyStatus;
+  errorMessage?: string;
 }
 
-interface UseLatencyResult {
-  data: LatencyResponse | null;
-  loading: boolean;
-  error: string | null;
+interface UseLatencyResult extends LatencyData {
   refetch: () => Promise<void>;
 }
 
+const calculateStats = (samples: number[]) => {
+  if (samples.length === 0) {
+    return { latest: null, min: null, max: null, avg: null };
+  }
+  return {
+    latest: samples[samples.length - 1],
+    min: Math.min(...samples),
+    max: Math.max(...samples),
+    avg: Math.round(samples.reduce((a, b) => a + b, 0) / samples.length),
+  };
+};
+
 export const useLatency = (server: ServerType): UseLatencyResult => {
-  const [data, setData] = useState<LatencyResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<LatencyData>({
+    latest: null,
+    min: null,
+    max: null,
+    avg: null,
+    samples: [],
+    status: 'loading',
+  });
 
   const fetchData = useCallback(async () => {
     try {
       const response = await fetch(`/api/${server}`);
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(`HTTP error: ${response.status}`);
       }
       
-      const json: LatencyResponse = await response.json();
-      setData(json);
-      setError(null);
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Response is not JSON');
+      }
+      
+      const json = await response.json();
+      
+      // Validate the response has expected structure
+      if (typeof json.latest !== 'number' || !Array.isArray(json.samples)) {
+        throw new Error('Invalid response structure');
+      }
+      
+      setData({
+        latest: json.latest,
+        min: json.min,
+        max: json.max,
+        avg: json.avg,
+        samples: json.samples,
+        status: 'online',
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch latency data');
-    } finally {
-      setLoading(false);
+      // Use fallback simulated data when offline
+      const fallbackSamples = FALLBACK_DATA[server];
+      const stats = calculateStats(fallbackSamples);
+      
+      setData({
+        ...stats,
+        samples: fallbackSamples,
+        status: 'offline',
+        errorMessage: err instanceof Error ? err.message : 'Failed to fetch',
+      });
     }
   }, [server]);
 
@@ -50,5 +98,5 @@ export const useLatency = (server: ServerType): UseLatencyResult => {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  return { data, loading, error, refetch: fetchData };
+  return { ...data, refetch: fetchData };
 };

@@ -18,8 +18,8 @@ const Index = () => {
           <LatencyCard serverName="UART Server 2" server="uart" />
           <LatencyCard serverName="Serial Server 3" server="serial" />
           
-          {/* Status Card */}
-          <StatusPill connected={true} />
+          {/* Status Card - auto-detects connection */}
+          <StatusPill />
         </div>
 
         {/* Footer */}

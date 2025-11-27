@@ -132,6 +132,18 @@ while True:
     time.sleep(3)  # Wait 3 seconds between measurements
 ```
 
+## Connection States
+
+The dashboard handles three connection states automatically:
+
+| State | Description | UI Behavior |
+|-------|-------------|-------------|
+| `loading` | Initial state while first fetch is in progress | Shows "Loading..." text |
+| `online` | API is reachable and returning valid data | Shows real latency values with glowing sparkline |
+| `offline` | API unreachable, non-JSON response, or errors | Shows "Offline" badge + simulated data (dimmed card) |
+
+**Automatic Transition**: Once the Raspberry Pi starts POSTing real data to the API, the cards will automatically switch from `offline` → `online` without any frontend code changes.
+
 ## Local Development
 
 ```sh
@@ -142,7 +154,7 @@ npm install
 npm run dev
 ```
 
-**Note**: API functions won't work locally without Azure Functions Core Tools. For local testing, the frontend will show "Waiting for data..." until connected to the deployed API.
+**Note**: API functions won't work locally without Azure Functions Core Tools. For local testing, the frontend will show the `offline` state with simulated data until connected to the deployed API.
 
 ## Deployment
 
