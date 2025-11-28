@@ -66,10 +66,10 @@ export const useLatency = (server: ServerType): UseLatencyResult => {
         throw new Error('Invalid response structure');
       }
       
-      // Extract latest from last sample, or use avg as fallback
-      const latest = json.samples.length > 0 
+      // Extract latest from latency field or last sample, or use avg as fallback
+      const latest = json.latency ?? (json.samples.length > 0 
         ? json.samples[json.samples.length - 1] 
-        : (json.avg ?? null);
+        : (json.avg ?? null));
       
       setData({
         latest,
