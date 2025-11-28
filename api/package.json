@@ -1,13 +1,10 @@
 {
   "name": "latencynet-api",
   "version": "1.0.0",
-  "description": "Azure Static Web Apps API for LatencyNet",
+  "main": "index.js",
+  "license": "MIT",
   "scripts": {
-    "build": "tsc",
-    "watch": "tsc -w"
-  },
-  "dependencies": {
-    "@azure/functions": "^4.0.0"
+    "build": "tsc"
   },
   "devDependencies": {
     "typescript": "^5.0.0"
