@@ -1,26 +1,37 @@
-const state = require("../gatewayState");
+let lastSeen = null;
 
 module.exports = async function (context, req) {
-  context.log('Gateway status endpoint called');
+  const method = (req.method || "GET").toUpperCase();
   
-  try {
-    const status = state.getStatus();
-
+  if (method === "POST") {
+    lastSeen = new Date().toISOString();
+    
     context.res = {
       status: 200,
       headers: { "Content-Type": "application/json" },
       body: {
         ok: true,
-        ...status
+        lastSeen: lastSeen
       }
     };
-  } catch (error) {
-    context.log.error('Error in gateway status endpoint:', error);
-    context.res = {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-      body: { error: "Internal server error" }
-    };
+    return;
   }
+  
+  // GET request
+  const now = new Date();
+  let connected = false;
+  
+  if (lastSeen) {
+    const diffMs = now.getTime() - new Date(lastSeen).getTime();
+    connected = diffMs < 30000; // 30 seconds window
+  }
+  
+  context.res = {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+    body: {
+      connected: connected,
+      lastSeen: lastSeen
+    }
+  };
 };
-
