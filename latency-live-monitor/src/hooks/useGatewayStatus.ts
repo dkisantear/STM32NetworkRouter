@@ -34,11 +34,12 @@ export const useGatewayStatus = (): GatewayStatus => {
       
       const json = await response.json();
       
+      // Map new API format: connected -> online, lastSeen -> lastHeartbeat
       setStatus({
-        online: json.online || false,
-        lastHeartbeat: json.lastHeartbeat || null,
-        lastLatencyMs: json.lastLatencyMs ?? null,
-        lastDeviceId: json.lastDeviceId || null,
+        online: json.connected || false,
+        lastHeartbeat: json.lastSeen || null,
+        lastLatencyMs: null, // Not provided by simplified API
+        lastDeviceId: null, // Not provided by simplified API
         loading: false,
         error: null,
       });

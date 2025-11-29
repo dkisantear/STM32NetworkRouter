@@ -233,35 +233,36 @@ curl "https://blue-desert-0c2a27e1e.3.azurestaticapps.net/api/gateway-status"
 Expected response (initially, before any heartbeat):
 ```json
 {
-  "online": false,
-  "lastHeartbeat": null,
-  "lastLatencyMs": null,
-  "lastDeviceId": null
+  "connected": false,
+  "lastSeen": null
+}
+```
+
+After sending a heartbeat POST, the GET response will show:
+```json
+{
+  "connected": true,
+  "lastSeen": "2025-11-27T03:45:00.000Z"
 }
 ```
 
 **Send a heartbeat (POST):**
 ```bash
 curl -X POST \
-  -H "Content-Type: application/json" \
-  -d '{"deviceId": "raspi-01", "latencyMs": 37}' \
-  "https://blue-desert-0c2a27e1e.3.azurestaticapps.net/api/gateway-heartbeat"
+  "https://blue-desert-0c2a27e1e.3.azurestaticapps.net/api/gateway-status"
 ```
 
 Expected response:
 ```json
 {
   "ok": true,
-  "message": "Gateway heartbeat received",
-  "deviceId": "raspi-01",
-  "latencyMs": 37,
-  "timestamp": "2025-11-27T03:45:00.000Z"
+  "lastSeen": "2025-11-27T03:45:00.000Z"
 }
 ```
 
 **After sending a heartbeat:**
-- The `/api/gateway-status` endpoint will return `"online": true` for about 30 seconds
+- The `/api/gateway-status` GET endpoint will return `"connected": true` for about 30 seconds
 - The frontend dashboard will automatically update to show "Connected" with a green dot
-- The card will display "Last heartbeat: Xs ago" and "Last latency: 37 ms"
+- The card will display "Last heartbeat: Xs ago"
 
-**Note:** The gateway is considered online if the last heartbeat was within the last 30 seconds. After 30 seconds without a heartbeat, the status will automatically switch back to "Disconnected".
+**Note:** The gateway is considered connected if the last heartbeat was within the last 30 seconds. After 30 seconds without a heartbeat, the status will automatically switch back to "Disconnected".
