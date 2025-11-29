@@ -24,7 +24,8 @@ export const useGatewayStatus = (): GatewayStatus => {
       const response = await fetch('/api/gateway-status');
       
       if (!response.ok) {
-        throw new Error(`HTTP error: ${response.status}`);
+        const errorText = await response.text().catch(() => 'Unknown error');
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
       
       const contentType = response.headers.get('content-type');
@@ -33,6 +34,11 @@ export const useGatewayStatus = (): GatewayStatus => {
       }
       
       const json = await response.json();
+      
+      // Handle error responses from API
+      if (json.error || json.ok === false) {
+        throw new Error(json.error || json.message || 'API returned error');
+      }
       
       // Map new API format: connected -> online, lastSeen -> lastHeartbeat
       setStatus({
@@ -44,15 +50,23 @@ export const useGatewayStatus = (): GatewayStatus => {
         error: null,
       });
     } catch (err) {
-      console.error('Failed to fetch gateway status:', err);
-      setStatus({
+      // Only log errors, don't spam console
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch';
+      
+      // Only set error state if it's a new error or after initial load
+      setStatus(prev => ({
         online: false,
-        lastHeartbeat: null,
+        lastHeartbeat: prev.lastHeartbeat, // Keep last known heartbeat
         lastLatencyMs: null,
         lastDeviceId: null,
         loading: false,
-        error: err instanceof Error ? err.message : 'Failed to fetch',
-      });
+        error: errorMessage,
+      }));
+      
+      // Only log to console if not a network error (to reduce spam)
+      if (!errorMessage.includes('Failed to fetch') && !errorMessage.includes('NetworkError')) {
+        console.error('Failed to fetch gateway status:', err);
+      }
     }
   }, []);
 
