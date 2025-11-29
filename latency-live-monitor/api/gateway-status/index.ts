@@ -1,6 +1,6 @@
-let lastSeen = null;
+let lastSeen: string | null = null;
 
-module.exports = async function (context, req) {
+export default async function (context: any, req: any): Promise<void> {
   const method = (req.method || "GET").toUpperCase();
   
   if (method === "POST") {
@@ -34,5 +34,5 @@ module.exports = async function (context, req) {
       lastSeen: lastSeen
     }
   };
-};
+}
 
