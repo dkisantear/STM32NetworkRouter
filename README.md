@@ -17,6 +17,7 @@ Real-time latency monitoring dashboard for CPE185 project.
 | Endpoint | Methods | Description |
 |----------|---------|-------------|
 | `/api/ping` | GET | Health check, returns `{ status: "OK", timestamp: ... }` |
+| `/api/gateway-status` | GET, POST | Gateway status tracking (uses Azure Table Storage) |
 | `/api/main` | GET, POST | Main Server latency data |
 | `/api/uart` | GET, POST | UART Server 2 latency data |
 | `/api/serial` | GET, POST | Serial Server 3 latency data |
@@ -39,6 +40,62 @@ Real-time latency monitoring dashboard for CPE185 project.
 {
   "latency": 42
 }
+```
+
+## Gateway Status Tracking
+
+The `/api/gateway-status` endpoint uses Azure Table Storage to track gateway online/offline status across all Azure Functions instances.
+
+### GET Gateway Status
+
+```bash
+curl "https://<YOUR-SWA-URL>/api/gateway-status?gatewayId=pi5-main"
+```
+
+**Response:**
+```json
+{
+  "gatewayId": "pi5-main",
+  "status": "online",
+  "lastUpdated": "2024-11-30T01:07:25.538Z"
+}
+```
+
+Possible status values: `"online"`, `"offline"`, or `"unknown"` (if gateway never checked in).
+
+### POST Gateway Status (from Raspberry Pi)
+
+Mark your Pi as online or offline:
+
+```bash
+curl -X POST "https://<YOUR-SWA-URL>/api/gateway-status" \
+  -H "Content-Type: application/json" \
+  -d '{"gatewayId":"pi5-main","status":"online"}'
+```
+
+**Response:**
+```json
+{
+  "gatewayId": "pi5-main",
+  "status": "online",
+  "lastUpdated": "2024-11-30T01:07:25.538Z"
+}
+```
+
+**Note:** The `status` field must be either `"online"` or `"offline"`.
+
+### Environment Variable Required
+
+For the gateway status endpoint to work, you must configure the Azure Table Storage connection string in your Azure Static Web App:
+
+1. Go to Azure Portal → Your Static Web App → Configuration
+2. Add application setting:
+   - **Name**: `TABLES_CONNECTION_STRING`
+   - **Value**: Your Azure Storage Account connection string (from "Access keys" section)
+
+The connection string looks like:
+```
+DefaultEndpointsProtocol=https;AccountName=latencynetstorage;AccountKey=...;EndpointSuffix=core.windows.net
 ```
 
 ## Raspberry Pi Integration

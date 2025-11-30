@@ -1,57 +1,137 @@
-let lastSeen = null;
+const { TableClient } = require("@azure/data-tables");
+
+const TABLE_NAME = "GatewayStatus";
+const PARTITION_KEY = "gateways";
+
+function getTableClient() {
+  const connectionString = process.env.TABLES_CONNECTION_STRING;
+  if (!connectionString) {
+    throw new Error("TABLES_CONNECTION_STRING environment variable is not set");
+  }
+  return TableClient.fromConnectionString(connectionString, TABLE_NAME);
+}
 
 module.exports = async function (context, req) {
   const method = (req.method || "GET").toUpperCase();
-  const now = new Date();
-  
-  if (method === "POST") {
-    // Called by the Pi
-    lastSeen = now.toISOString();
-    
-    context.log("Gateway heartbeat received at", lastSeen);
-    
-    context.res = {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-      body: {
-        message: "Heartbeat received",
-        lastSeen: lastSeen
+
+  try {
+    if (method === "POST") {
+      const body = req.body;
+      
+      if (!body || typeof body !== "object") {
+        context.res = {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+          body: { error: "Request body must be JSON" }
+        };
+        return;
       }
-    };
-    return;
-  }
-  
-  if (method === "GET") {
-    // Called by the frontend
-    let status = "offline";
-    let msSinceLastSeen = null;
-    
-    if (lastSeen) {
-      const last = new Date(lastSeen);
-      msSinceLastSeen = now.getTime() - last.getTime();
-      // Threshold: 3 minutes (180 seconds) - large buffer for instance isolation
-      // Pi sends heartbeat every 60s, so 3min gives plenty of tolerance
-      if (msSinceLastSeen <= 180000) {
-        status = "online";
+
+      const gatewayId = body.gatewayId;
+      const status = body.status;
+
+      if (!gatewayId || typeof gatewayId !== "string") {
+        context.res = {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+          body: { error: "gatewayId is required and must be a string" }
+        };
+        return;
+      }
+
+      if (status !== "online" && status !== "offline") {
+        context.res = {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+          body: { error: "status must be 'online' or 'offline'" }
+        };
+        return;
+      }
+
+      const lastUpdated = new Date().toISOString();
+
+      const entity = {
+        partitionKey: PARTITION_KEY,
+        rowKey: gatewayId,
+        status: status,
+        lastUpdated: lastUpdated
+      };
+
+      const tableClient = getTableClient();
+      await tableClient.upsertEntity(entity, "Replace");
+
+      context.log(`Gateway status updated: ${gatewayId} -> ${status}`);
+
+      context.res = {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: {
+          gatewayId: gatewayId,
+          status: status,
+          lastUpdated: lastUpdated
+        }
+      };
+      return;
+    }
+
+    if (method === "GET") {
+      const gatewayId = req.query?.gatewayId;
+
+      if (!gatewayId || typeof gatewayId !== "string") {
+        context.res = {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+          body: { error: "gatewayId query parameter is required" }
+        };
+        return;
+      }
+
+      const tableClient = getTableClient();
+
+      try {
+        const entity = await tableClient.getEntity(PARTITION_KEY, gatewayId);
+
+        context.res = {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+          body: {
+            gatewayId: gatewayId,
+            status: entity.status || "unknown",
+            lastUpdated: entity.lastUpdated || null
+          }
+        };
+        return;
+      } catch (error) {
+        if (error.statusCode === 404) {
+          context.res = {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+            body: {
+              gatewayId: gatewayId,
+              status: "unknown",
+              lastUpdated: null
+            }
+          };
+          return;
+        }
+        throw error;
       }
     }
-    
+
     context.res = {
-      status: 200,
+      status: 405,
+      headers: { "Allow": "GET, POST", "Content-Type": "application/json" },
+      body: { error: "Method not allowed" }
+    };
+  } catch (error) {
+    context.log.error("Error processing gateway status:", error);
+    context.res = {
+      status: 500,
       headers: { "Content-Type": "application/json" },
       body: {
-        status: status,
-        lastSeen: lastSeen,
-        msSinceLastSeen: msSinceLastSeen
+        error: "Internal server error",
+        message: error.message
       }
     };
-    return;
   }
-  
-  // Fallback for unsupported methods
-  context.res = {
-    status: 405,
-    headers: { "Allow": "GET, POST" },
-    body: { error: "Method not allowed" }
-  };
 };
