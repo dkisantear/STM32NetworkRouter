@@ -1,5 +1,6 @@
 import { LatencyCard } from '@/components/LatencyCard';
 import { StatusPill } from '@/components/StatusPill';
+import { Stm32StatusPill } from '@/components/Stm32StatusPill';
 
 const Index = () => {
   return (
@@ -18,8 +19,9 @@ const Index = () => {
           <LatencyCard serverName="UART Server 2" server="uart" />
           <LatencyCard serverName="Serial Server 3" server="serial" />
           
-          {/* Status Card - auto-detects connection */}
+          {/* Status Cards - auto-detect connection */}
           <StatusPill />
+          <Stm32StatusPill />
         </div>
 
         {/* Footer */}
