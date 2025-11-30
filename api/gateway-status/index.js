@@ -90,14 +90,31 @@ module.exports = async function (context, req) {
 
       try {
         const entity = await tableClient.getEntity(PARTITION_KEY, gatewayId);
+        
+        const now = new Date();
+        let finalStatus = entity.status || "unknown";
+        const lastUpdated = entity.lastUpdated || null;
+        
+        // Automatic timeout: If lastUpdated is older than 90 seconds, mark as offline
+        // This handles cases where Pi is unplugged/crashed and can't send POST
+        if (lastUpdated && finalStatus === "online") {
+          const lastUpdatedDate = new Date(lastUpdated);
+          const ageMs = now.getTime() - lastUpdatedDate.getTime();
+          const TIMEOUT_MS = 90 * 1000; // 90 seconds timeout
+          
+          if (ageMs > TIMEOUT_MS) {
+            finalStatus = "offline";
+            context.log(`Gateway ${gatewayId} timeout: last updated ${Math.round(ageMs / 1000)}s ago, marking as offline`);
+          }
+        }
 
         context.res = {
           status: 200,
           headers: { "Content-Type": "application/json" },
           body: {
             gatewayId: gatewayId,
-            status: entity.status || "unknown",
-            lastUpdated: entity.lastUpdated || null
+            status: finalStatus,
+            lastUpdated: lastUpdated
           }
         };
         return;
