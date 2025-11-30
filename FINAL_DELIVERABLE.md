@@ -322,3 +322,4 @@ const { status, lastSeen, msSinceLastSeen, loading } = useGatewayStatus();
 
 **Refactor Complete!** All requested changes have been implemented successfully.
 
+

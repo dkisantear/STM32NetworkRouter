@@ -67,3 +67,4 @@ foreach ($script in $scripts) {
 }
 
 Write-Host "`nDone! Files archived to $archivePath/"
+

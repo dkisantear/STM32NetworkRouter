@@ -23,7 +23,7 @@ module.exports = async function (context, req) {
   
   if (lastSeen) {
     const diffMs = now.getTime() - new Date(lastSeen).getTime();
-    connected = diffMs < 30000; // 30 seconds window
+    connected = diffMs < 90000; // 90 seconds (accounts for 60s heartbeat + instance switching)
   }
   
   context.res = {

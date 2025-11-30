@@ -29,8 +29,8 @@ module.exports = async function (context, req) {
     if (lastSeen) {
       const last = new Date(lastSeen);
       msSinceLastSeen = now.getTime() - last.getTime();
-      // Example threshold: 20 seconds
-      if (msSinceLastSeen <= 20000) {
+      // Threshold: 90 seconds (accounts for 60s heartbeat interval + instance switching delays)
+      if (msSinceLastSeen <= 90000) {
         status = "online";
       }
     }
