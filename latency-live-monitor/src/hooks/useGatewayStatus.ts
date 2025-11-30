@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 export type GatewayStatus = {
   status: 'online' | 'offline';
@@ -8,6 +8,10 @@ export type GatewayStatus = {
   error: string | null;
 };
 
+// Sticky online: once we see online, stay online for 5 minutes even if API says offline
+// This prevents flickering due to Azure Functions instance isolation
+const STICKY_ONLINE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+
 export const useGatewayStatus = (): GatewayStatus => {
   const [gatewayStatus, setGatewayStatus] = useState<GatewayStatus>({
     status: 'offline',
@@ -16,6 +20,9 @@ export const useGatewayStatus = (): GatewayStatus => {
     loading: true,
     error: null,
   });
+  
+  // Track when we last saw "online" status for sticky behavior
+  const lastOnlineTimeRef = useRef<number | null>(null);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -38,10 +45,30 @@ export const useGatewayStatus = (): GatewayStatus => {
         throw new Error(json.error);
       }
       
+      // Determine actual status from API
+      const apiStatus = (json.status === 'online' ? 'online' : 'offline') as 'online' | 'offline';
+      
+      // Update last online time if API says online
+      if (apiStatus === 'online') {
+        lastOnlineTimeRef.current = Date.now();
+      }
+      
+      // Apply sticky online logic: if we've seen online recently, keep showing online
+      let finalStatus = apiStatus;
+      if (apiStatus === 'offline' && lastOnlineTimeRef.current !== null) {
+        const timeSinceLastOnline = Date.now() - lastOnlineTimeRef.current;
+        if (timeSinceLastOnline < STICKY_ONLINE_DURATION_MS) {
+          // Still within sticky window, keep showing online
+          finalStatus = 'online';
+        } else {
+          // Sticky window expired, truly offline (Pi hasn't been seen in 5+ minutes)
+          lastOnlineTimeRef.current = null;
+        }
+      }
+      
       // Valid response format: { status: "online" | "offline", lastSeen: string | null, msSinceLastSeen: number | null }
-      // Note: status === "offline" is NOT an error - it's a valid state!
       setGatewayStatus({
-        status: (json.status === 'online' ? 'online' : 'offline') as 'online' | 'offline',
+        status: finalStatus,
         lastSeen: json.lastSeen || null,
         msSinceLastSeen: json.msSinceLastSeen !== undefined ? json.msSinceLastSeen : null,
         loading: false,
@@ -50,9 +77,19 @@ export const useGatewayStatus = (): GatewayStatus => {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch';
       
+      // On network errors, apply sticky logic if we've seen online recently
+      let finalStatus: 'online' | 'offline' = 'offline';
+      if (lastOnlineTimeRef.current !== null) {
+        const timeSinceLastOnline = Date.now() - lastOnlineTimeRef.current;
+        if (timeSinceLastOnline < STICKY_ONLINE_DURATION_MS) {
+          finalStatus = 'online';
+        }
+      }
+      
       // Only update error state, keep last known values if available
       setGatewayStatus(prev => ({
         ...prev,
+        status: finalStatus,
         loading: false,
         error: errorMessage,
       }));

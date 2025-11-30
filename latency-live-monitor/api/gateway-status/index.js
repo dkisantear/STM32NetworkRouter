@@ -19,19 +19,25 @@ module.exports = async function (context, req) {
   
   // GET request
   const now = new Date();
-  let connected = false;
+  let status = "offline";
+  let msSinceLastSeen = null;
   
   if (lastSeen) {
-    const diffMs = now.getTime() - new Date(lastSeen).getTime();
-    connected = diffMs < 90000; // 90 seconds (accounts for 60s heartbeat + instance switching)
+    const last = new Date(lastSeen);
+    msSinceLastSeen = now.getTime() - last.getTime();
+    // Threshold: 3 minutes (180 seconds) - large buffer for instance isolation
+    if (msSinceLastSeen <= 180000) {
+      status = "online";
+    }
   }
   
   context.res = {
     status: 200,
     headers: { "Content-Type": "application/json" },
     body: {
-      connected: connected,
-      lastSeen: lastSeen
+      status: status,
+      lastSeen: lastSeen,
+      msSinceLastSeen: msSinceLastSeen
     }
   };
 };

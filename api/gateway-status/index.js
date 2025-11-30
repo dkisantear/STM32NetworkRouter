@@ -29,8 +29,9 @@ module.exports = async function (context, req) {
     if (lastSeen) {
       const last = new Date(lastSeen);
       msSinceLastSeen = now.getTime() - last.getTime();
-      // Threshold: 90 seconds (accounts for 60s heartbeat interval + instance switching delays)
-      if (msSinceLastSeen <= 90000) {
+      // Threshold: 3 minutes (180 seconds) - large buffer for instance isolation
+      // Pi sends heartbeat every 60s, so 3min gives plenty of tolerance
+      if (msSinceLastSeen <= 180000) {
         status = "online";
       }
     }
