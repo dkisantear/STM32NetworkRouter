@@ -1,20 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
 
 export type GatewayStatus = {
-  online: boolean;
-  lastHeartbeat: string | null;
-  lastLatencyMs: number | null;
-  lastDeviceId: string | null;
+  status: 'online' | 'offline';
+  lastSeen: string | null;
+  msSinceLastSeen: number | null;
   loading: boolean;
   error: string | null;
 };
 
 export const useGatewayStatus = (): GatewayStatus => {
-  const [status, setStatus] = useState<GatewayStatus>({
-    online: false,
-    lastHeartbeat: null,
-    lastLatencyMs: null,
-    lastDeviceId: null,
+  const [gatewayStatus, setGatewayStatus] = useState<GatewayStatus>({
+    status: 'offline',
+    lastSeen: null,
+    msSinceLastSeen: null,
     loading: true,
     error: null,
   });
@@ -35,36 +33,34 @@ export const useGatewayStatus = (): GatewayStatus => {
       
       const json = await response.json();
       
-      // Handle error responses from API
-      if (json.error || json.ok === false) {
-        throw new Error(json.error || json.message || 'API returned error');
+      // Handle actual API errors (method not allowed, etc.)
+      if (json.error) {
+        throw new Error(json.error);
       }
       
-      // Map new API format: connected -> online, lastSeen -> lastHeartbeat
-      setStatus({
-        online: json.connected || false,
-        lastHeartbeat: json.lastSeen || null,
-        lastLatencyMs: null, // Not provided by simplified API
-        lastDeviceId: null, // Not provided by simplified API
+      // Valid response format: { status: "online" | "offline", lastSeen: string | null, msSinceLastSeen: number | null }
+      // Note: status === "offline" is NOT an error - it's a valid state!
+      setGatewayStatus({
+        status: (json.status === 'online' ? 'online' : 'offline') as 'online' | 'offline',
+        lastSeen: json.lastSeen || null,
+        msSinceLastSeen: json.msSinceLastSeen !== undefined ? json.msSinceLastSeen : null,
         loading: false,
         error: null,
       });
     } catch (err) {
-      // Only log errors, don't spam console
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch';
       
-      // Only set error state if it's a new error or after initial load
-      setStatus(prev => ({
-        online: false,
-        lastHeartbeat: prev.lastHeartbeat, // Keep last known heartbeat
-        lastLatencyMs: null,
-        lastDeviceId: null,
+      // Only update error state, keep last known values if available
+      setGatewayStatus(prev => ({
+        ...prev,
         loading: false,
         error: errorMessage,
       }));
       
-      // Only log to console if not a network error (to reduce spam)
-      if (!errorMessage.includes('Failed to fetch') && !errorMessage.includes('NetworkError')) {
+      // Only log actual errors (network failures, etc.) - not offline status
+      if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
+        // Silently handle network errors (common, don't spam console)
+      } else {
         console.error('Failed to fetch gateway status:', err);
       }
     }
@@ -74,12 +70,12 @@ export const useGatewayStatus = (): GatewayStatus => {
     // Initial fetch
     fetchStatus();
 
-    // Poll every 1 second
-    const interval = setInterval(fetchStatus, 1000);
+    // QUOTA-EFFICIENT: Poll every 10 seconds
+    const interval = setInterval(fetchStatus, 10000);
 
     return () => clearInterval(interval);
   }, [fetchStatus]);
 
-  return status;
+  return gatewayStatus;
 };
 

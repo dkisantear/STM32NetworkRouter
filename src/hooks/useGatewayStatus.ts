@@ -1,19 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
 
 export type GatewayStatus = {
-  connected: boolean;
+  status: 'online' | 'offline';
   lastSeen: string | null;
-  ageMs: number | null;
+  msSinceLastSeen: number | null;
   loading: boolean;
-  error?: string;
+  error: string | null;
 };
 
 export const useGatewayStatus = (): GatewayStatus => {
-  const [status, setStatus] = useState<GatewayStatus>({
-    connected: false,
+  const [gatewayStatus, setGatewayStatus] = useState<GatewayStatus>({
+    status: 'offline',
     lastSeen: null,
-    ageMs: null,
+    msSinceLastSeen: null,
     loading: true,
+    error: null,
   });
 
   const fetchStatus = useCallback(async () => {
@@ -21,7 +22,8 @@ export const useGatewayStatus = (): GatewayStatus => {
       const response = await fetch('/api/gateway-status');
       
       if (!response.ok) {
-        throw new Error(`HTTP error: ${response.status}`);
+        const errorText = await response.text().catch(() => 'Unknown error');
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
       
       const contentType = response.headers.get('content-type');
@@ -31,25 +33,36 @@ export const useGatewayStatus = (): GatewayStatus => {
       
       const json = await response.json();
       
-      if (!json.ok) {
-        throw new Error('API returned error');
+      // Handle actual API errors (method not allowed, etc.)
+      if (json.error) {
+        throw new Error(json.error);
       }
       
-      setStatus({
-        connected: json.connected || false,
-        lastSeen: json.lastSeen ? new Date(json.lastSeen).toISOString() : null,
-        ageMs: json.ageMs ?? null,
+      // Valid response format: { status: "online" | "offline", lastSeen: string | null, msSinceLastSeen: number | null }
+      // Note: status === "offline" is NOT an error - it's a valid state!
+      setGatewayStatus({
+        status: (json.status === 'online' ? 'online' : 'offline') as 'online' | 'offline',
+        lastSeen: json.lastSeen || null,
+        msSinceLastSeen: json.msSinceLastSeen !== undefined ? json.msSinceLastSeen : null,
         loading: false,
+        error: null,
       });
     } catch (err) {
-      console.error('Failed to fetch gateway status:', err);
-      setStatus({
-        connected: false,
-        lastSeen: null,
-        ageMs: null,
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch';
+      
+      // Only update error state, keep last known values if available
+      setGatewayStatus(prev => ({
+        ...prev,
         loading: false,
-        error: err instanceof Error ? err.message : 'Failed to fetch',
-      });
+        error: errorMessage,
+      }));
+      
+      // Only log actual errors (network failures, etc.) - not offline status
+      if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
+        // Silently handle network errors (common, don't spam console)
+      } else {
+        console.error('Failed to fetch gateway status:', err);
+      }
     }
   }, []);
 
@@ -57,12 +70,11 @@ export const useGatewayStatus = (): GatewayStatus => {
     // Initial fetch
     fetchStatus();
 
-    // Poll every 5 seconds
-    const interval = setInterval(fetchStatus, 5000);
+    // QUOTA-EFFICIENT: Poll every 10 seconds
+    const interval = setInterval(fetchStatus, 10000);
 
     return () => clearInterval(interval);
   }, [fetchStatus]);
 
-  return status;
+  return gatewayStatus;
 };
-

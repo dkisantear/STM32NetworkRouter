@@ -2,36 +2,55 @@ let lastSeen = null;
 
 module.exports = async function (context, req) {
   const method = (req.method || "GET").toUpperCase();
+  const now = new Date();
   
   if (method === "POST") {
-    lastSeen = new Date().toISOString();
+    // Called by the Pi
+    lastSeen = now.toISOString();
+    
+    context.log("Gateway heartbeat received at", lastSeen);
     
     context.res = {
       status: 200,
       headers: { "Content-Type": "application/json" },
       body: {
-        ok: true,
+        message: "Heartbeat received",
         lastSeen: lastSeen
       }
     };
     return;
   }
   
-  // GET request
-  const now = new Date();
-  let connected = false;
-  
-  if (lastSeen) {
-    const diffMs = now.getTime() - new Date(lastSeen).getTime();
-    connected = diffMs < 30000; // 30 seconds window
+  if (method === "GET") {
+    // Called by the frontend
+    let status = "offline";
+    let msSinceLastSeen = null;
+    
+    if (lastSeen) {
+      const last = new Date(lastSeen);
+      msSinceLastSeen = now.getTime() - last.getTime();
+      // Example threshold: 20 seconds
+      if (msSinceLastSeen <= 20000) {
+        status = "online";
+      }
+    }
+    
+    context.res = {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+      body: {
+        status: status,
+        lastSeen: lastSeen,
+        msSinceLastSeen: msSinceLastSeen
+      }
+    };
+    return;
   }
   
+  // Fallback for unsupported methods
   context.res = {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-    body: {
-      connected: connected,
-      lastSeen: lastSeen
-    }
+    status: 405,
+    headers: { "Allow": "GET, POST" },
+    body: { error: "Method not allowed" }
   };
 };
