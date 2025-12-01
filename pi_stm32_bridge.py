@@ -16,7 +16,7 @@ UART_DEVICE = "/dev/ttyAMA0"  # Pi 5 UART device
 UART_BAUDRATE = 38400
 API_URL = "https://blue-desert-0c2a27e1e.3.azurestaticapps.net/api/stm32-status"
 DEVICE_ID = "stm32-main"
-TIMEOUT_SECONDS = 10  # If no UART message received in this time, mark as offline
+TIMEOUT_SECONDS = 15  # If no UART message received in this time, mark as offline (increased from 10 to 15)
 HEARTBEAT_MESSAGE = "STM32_ALIVE"
 
 # Use home directory for log file (no sudo needed)
@@ -92,6 +92,10 @@ def main():
                     if send_status_to_azure("online"):
                         last_status_sent = "online"
                         logger.info("✅ Initial status sent!")
+                    
+                    # Initialize last_message_time so we can detect if messages stop
+                    # Use a time slightly in the past so we don't immediately timeout
+                    last_message_time = time.time() - 5  # Allow 5 second grace period
                     
                 except serial.SerialException as e:
                     logger.error(f"❌ Failed to open serial port: {e}")
