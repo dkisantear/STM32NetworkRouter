@@ -48,64 +48,48 @@ export const LatencyCard = ({ serverName, server }: LatencyCardProps) => {
     const stm32IsLoading = stm32Status.loading;
     const stm32HasError = stm32Status.error !== null;
 
-    return (
-      <Card className={cn(
-        "p-6 border border-border rounded-lg shadow-lg transition-all",
-        stm32IsOffline && "opacity-60",
-        !stm32IsOffline && "hover:shadow-xl"
-      )}>
-        <div className="flex items-center gap-4">
-          {/* Status Indicator */}
-          <div className="flex-shrink-0">
-            <div
-              className={cn(
-                'w-4 h-4 rounded-full transition-all',
-                stm32IsLoading && 'bg-muted-foreground animate-pulse',
-                stm32HasError && 'bg-destructive',
-                stm32IsOnline && 'bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.6)]',
-                stm32IsOffline && 'bg-destructive',
-                !stm32IsLoading && !stm32HasError && !stm32IsOnline && !stm32IsOffline && 'bg-muted-foreground'
-              )}
-            />
-          </div>
+    const getStatusDisplay = (): string => {
+      if (stm32Status.loading) return 'Checking status...';
+      if (stm32Status.error) return 'Error connecting to API';
+      if (stm32Status.status === 'online') return 'Online';
+      if (stm32Status.status === 'offline') return 'Offline';
+      return 'Unknown';
+    };
 
-          {/* Status Info */}
-          <div className="flex-1 space-y-1">
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-medium text-foreground">{serverName}</p>
-              {stm32IsOffline && (
-                <span className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground">
-                  Offline
-                </span>
-              )}
-            </div>
-            
-            <p className="text-xs text-muted-foreground">
-              STM32 → Pi → Azure
+    const getStatusColor = (): string => {
+      if (stm32Status.loading) return 'bg-muted-foreground';
+      if (stm32Status.error) return 'bg-destructive';
+      if (stm32Status.status === 'online') return 'bg-primary';
+      if (stm32Status.status === 'offline') return 'bg-destructive';
+      return 'bg-muted-foreground';
+    };
+
+    const getStatusGlow = (): string => {
+      if (stm32Status.loading || stm32Status.error || stm32Status.status === 'unknown') return '';
+      if (stm32Status.status === 'online') return 'shadow-[0_0_12px_hsl(var(--primary))]';
+      return 'shadow-[0_0_12px_hsl(var(--destructive))]';
+    };
+
+    return (
+      <Card className="p-6 border border-border rounded-lg shadow-lg">
+        <div className="flex items-center gap-3">
+          <div
+            className={cn(
+              'w-3 h-3 rounded-full transition-all',
+              getStatusColor(),
+              getStatusGlow(),
+              stm32Status.loading && 'animate-pulse'
+            )}
+          />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-foreground">{serverName}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {getStatusDisplay()}
             </p>
-            
-            {stm32IsLoading ? (
-              <p className="text-sm text-muted-foreground">Checking status...</p>
-            ) : stm32HasError ? (
-              <p className="text-sm text-destructive">Error: {stm32Status.error}</p>
-            ) : (
-              <>
-                <p className={cn(
-                  "text-lg font-semibold",
-                  stm32IsOnline && "text-green-500",
-                  stm32IsOffline && "text-destructive",
-                  !stm32IsOnline && !stm32IsOffline && "text-muted-foreground"
-                )}>
-                  {stm32Status.status === 'online' ? 'Online' : 
-                   stm32Status.status === 'offline' ? 'Offline' : 
-                   'Unknown'}
-                </p>
-                {stm32Status.lastUpdated && (
-                  <p className="text-xs text-muted-foreground">
-                    Last updated: {formatRelativeTime(stm32Status.lastUpdated)}
-                  </p>
-                )}
-              </>
+            {!stm32Status.loading && !stm32Status.error && stm32Status.lastUpdated && (
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Last updated: {formatRelativeTime(stm32Status.lastUpdated)}
+              </p>
             )}
           </div>
         </div>
