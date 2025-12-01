@@ -117,20 +117,43 @@ def main():
                                 last_status_sent = "online"
                         last_heartbeat_time = now
                     
-                    # Read line from UART
-                    if ser.in_waiting > 0:
-                        line = ser.readline().decode("utf-8", errors="ignore").strip()
+                    # Read from UART - use a more robust method
+                    try:
+                        # Check if data is available
+                        bytes_available = ser.in_waiting
                         
-                        if line:
-                            logger.info(f"📥 Received: {repr(line)}")
+                        if bytes_available > 0:
+                            # Read available bytes
+                            raw_data = ser.read(bytes_available)
                             
-                            # Check if it's the expected heartbeat message
-                            if HEARTBEAT_MESSAGE in line or line == HEARTBEAT_MESSAGE:
-                                last_message_time = time.time()
+                            # Decode to string
+                            try:
+                                text = raw_data.decode('utf-8', errors='ignore')
                                 
-                                # Send "online" status when we receive a message
-                                if send_status_to_azure("online"):
-                                    last_status_sent = "online"
+                                # Process each line in the received data
+                                for line in text.split('\n'):
+                                    line = line.strip()
+                                    if line:
+                                        logger.info(f"📥 Received: {repr(line)}")
+                                        
+                                        # Check if it's the expected heartbeat message
+                                        if HEARTBEAT_MESSAGE in line or line == HEARTBEAT_MESSAGE:
+                                            last_message_time = time.time()
+                                            
+                                            # Send "online" status when we receive a message
+                                            if send_status_to_azure("online"):
+                                                last_status_sent = "online"
+                            except UnicodeDecodeError:
+                                # Ignore decode errors for garbage data
+                                pass
+                    
+                    except OSError as e:
+                        # Handle "device reports readiness but returned no data" error
+                        if "returned no data" in str(e).lower():
+                            # This is a common UART quirk - ignore it and continue
+                            pass
+                        else:
+                            raise  # Re-raise other OSErrors
                     
                     # Check for timeout - if no message received in TIMEOUT_SECONDS, mark as offline
                     if last_message_time is not None:
@@ -145,16 +168,33 @@ def main():
                     # Handle garbage/partial data - ignore and continue
                     pass
                 except serial.SerialException as e:
-                    logger.error(f"❌ Serial port error during read: {e}")
-                    # Close port and break to reconnect
-                    try:
-                        ser.close()
-                    except:
+                    error_msg = str(e).lower()
+                    if "returned no data" in error_msg:
+                        # Common UART quirk - ignore
                         pass
-                    ser = None
-                    break  # Break inner loop, reconnect in outer loop
+                    else:
+                        logger.error(f"❌ Serial port error during read: {e}")
+                        # Close port and break to reconnect
+                        try:
+                            ser.close()
+                        except:
+                            pass
+                        ser = None
+                        break  # Break inner loop, reconnect in outer loop
+                except OSError as e:
+                    error_msg = str(e).lower()
+                    if "returned no data" in error_msg:
+                        # Common UART quirk - ignore
+                        pass
+                    else:
+                        logger.error(f"❌ OS error: {e}")
                 except Exception as e:
-                    logger.error(f"❌ Error processing UART data: {e}")
+                    error_msg = str(e).lower()
+                    if "returned no data" in error_msg:
+                        # Common UART quirk - ignore
+                        pass
+                    else:
+                        logger.error(f"❌ Error processing UART data: {e}")
                     # Continue running - don't crash on errors
                 
                 # Small delay to prevent CPU spinning
