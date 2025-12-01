@@ -121,35 +121,22 @@ def main():
                                 last_status_sent = "online"
                         last_heartbeat_time = now
                     
-                    # Read from UART - use a more robust method
+                    # Read from UART - use same method as working test script (readline)
                     try:
-                        # Check if data is available
-                        bytes_available = ser.in_waiting
+                        # Use readline() which works in test script
+                        # This blocks until a complete line is received (with timeout)
+                        line = ser.readline().decode("utf-8", errors="ignore").strip()
                         
-                        if bytes_available > 0:
-                            # Read available bytes
-                            raw_data = ser.read(bytes_available)
+                        if line:
+                            logger.info(f"📥 Received: {repr(line)}")
                             
-                            # Decode to string
-                            try:
-                                text = raw_data.decode('utf-8', errors='ignore')
+                            # Check if it's the expected heartbeat message
+                            if HEARTBEAT_MESSAGE in line or line == HEARTBEAT_MESSAGE:
+                                last_message_time = time.time()
                                 
-                                # Process each line in the received data
-                                for line in text.split('\n'):
-                                    line = line.strip()
-                                    if line:
-                                        logger.info(f"📥 Received: {repr(line)}")
-                                        
-                                        # Check if it's the expected heartbeat message
-                                        if HEARTBEAT_MESSAGE in line or line == HEARTBEAT_MESSAGE:
-                                            last_message_time = time.time()
-                                            
-                                            # Send "online" status when we receive a message
-                                            if send_status_to_azure("online"):
-                                                last_status_sent = "online"
-                            except UnicodeDecodeError:
-                                # Ignore decode errors for garbage data
-                                pass
+                                # Send "online" status when we receive a message
+                                if send_status_to_azure("online"):
+                                    last_status_sent = "online"
                     
                     except OSError as e:
                         # Handle "device reports readiness but returned no data" error
