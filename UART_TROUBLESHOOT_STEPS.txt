@@ -1,0 +1,135 @@
+# ========================================
+# UART Troubleshooting - Step by Step
+# ========================================
+
+echo "========================================"
+echo "STEP 1: Verify STM32 Code is Running"
+echo "========================================"
+echo ""
+echo "On your STM32 board, check:"
+echo "  ☐ Are the LEDs responding to DIP switches?"
+echo "  ☐ Does the board appear to be running?"
+echo ""
+echo "If LEDs don't work, code might not be flashed correctly."
+echo ""
+
+echo "========================================"
+echo "STEP 2: Verify USART2 Pin Assignment"
+echo "========================================"
+echo ""
+echo "Check STM32CubeMX / .ioc file:"
+echo "  → What pins are assigned to USART2_TX and USART2_RX?"
+echo ""
+echo "Common: PA2 (TX) and PA3 (RX)"
+echo "But verify in YOUR project!"
+echo ""
+
+echo "========================================"
+echo "STEP 3: Double-Check Wiring"
+echo "========================================"
+echo ""
+echo "CRITICAL: TX and RX must be CROSSED"
+echo ""
+echo "  STM32 PA2 (TX)  →  Pi Pin 10 (RXD)  ← STM32 sends here"
+echo "  STM32 PA3 (RX)  →  Pi Pin 8  (TXD)  ← Pi sends here"
+echo "  GND             →  GND"
+echo ""
+echo "⚠️  If TX→TX and RX→RX, nothing will work!"
+echo ""
+
+echo "========================================"
+echo "STEP 4: Test Pi UART Hardware"
+echo "========================================"
+echo ""
+echo "Run the diagnostic script:"
+echo "  Copy/paste UART_DIAGNOSTIC.txt into Pi terminal"
+echo ""
+
+echo "========================================"
+echo "STEP 5: Try Alternative UART Device"
+echo "========================================"
+echo ""
+echo "Some Pi models use /dev/ttyAMA0 instead of /dev/serial0"
+echo ""
+cat > /tmp/test_both_devices.sh << 'SCRIPT'
+#!/bin/bash
+for dev in "/dev/serial0" "/dev/ttyAMA0"; do
+    echo "Testing $dev..."
+    if [ -e "$dev" ]; then
+        echo "  ✅ Device exists"
+        python3 -c "
+import serial
+import time
+try:
+    ser = serial.Serial('$dev', 38400, timeout=1)
+    print('  ✅ Opened successfully')
+    print('  👂 Listening for 3 seconds...')
+    start = time.time()
+    while time.time() - start < 3:
+        if ser.in_waiting:
+            data = ser.read(ser.in_waiting).decode('utf-8', errors='ignore')
+            print(f'  📥 Received: {repr(data)}')
+        time.sleep(0.1)
+    ser.close()
+except Exception as e:
+    print(f'  ❌ Error: {e}')
+"
+    else
+        echo "  ❌ Device not found"
+    fi
+    echo ""
+done
+SCRIPT
+
+chmod +x /tmp/test_both_devices.sh
+bash /tmp/test_both_devices.sh
+
+echo "========================================"
+echo "STEP 6: Test with Slower Baud Rate"
+echo "========================================"
+echo ""
+echo "Baud rate mismatch can cause silent failures."
+echo "Try 9600 baud:"
+echo ""
+echo "1. Change STM32 code: huart2.Init.BaudRate = 9600;"
+echo "2. Flash STM32"
+echo "3. Update Pi script: BAUDRATE = 9600"
+echo "4. Test again"
+echo ""
+
+echo "========================================"
+echo "STEP 7: Verify STM32 TX Pin is Active"
+echo "========================================"
+echo ""
+echo "If you have a multimeter or scope:"
+echo "  → Probe STM32 PA2 (or your USART2_TX pin)"
+echo "  → Should see voltage changes every ~1 second"
+echo "  → If completely static, STM32 might not be sending"
+echo ""
+
+echo "========================================"
+echo "STEP 8: Try Loopback Test"
+echo "========================================"
+echo ""
+echo "Connect Pi TX (Pin 8) to Pi RX (Pin 10) temporarily"
+echo "Run this to verify Pi UART hardware works:"
+cat > /tmp/pi_loopback.py << 'PY'
+import serial
+import time
+
+ser = serial.Serial("/dev/serial0", 38400, timeout=1)
+print("Sending test message...")
+ser.write(b"LOOPBACK_TEST\n")
+time.sleep(0.1)
+if ser.in_waiting:
+    data = ser.read(ser.in_waiting)
+    print(f"Received: {data}")
+    print("✅ Loopback works - Pi UART hardware is OK")
+else:
+    print("❌ No loopback - check wiring")
+ser.close()
+PY
+
+echo "  python3 /tmp/pi_loopback.py"
+echo ""
+

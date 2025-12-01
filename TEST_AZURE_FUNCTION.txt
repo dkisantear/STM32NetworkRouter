@@ -1,0 +1,17 @@
+# ========================================
+# Test Azure Function Directly
+# ========================================
+
+# Test 1: GET current status (should be "unknown")
+curl "https://blue-desert-0c2a27e1e.3.azurestaticapps.net/api/stm32-status?deviceId=stm32-main"
+
+# Test 2: POST a test status (should return "online")
+curl -X POST "https://blue-desert-0c2a27e1e.3.azurestaticapps.net/api/stm32-status" \
+  -H "Content-Type: application/json" \
+  -d "{\"deviceId\":\"stm32-main\",\"status\":\"online\"}"
+
+# Test 3: GET again (should now return "online" with timestamp)
+curl "https://blue-desert-0c2a27e1e.3.azurestaticapps.net/api/stm32-status?deviceId=stm32-main"
+
+
+

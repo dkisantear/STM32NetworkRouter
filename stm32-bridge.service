@@ -1,0 +1,20 @@
+[Unit]
+Description=STM32 UART Bridge Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=%h/stm32-bridge
+ExecStart=/usr/bin/python3 %h/pi_stm32_bridge.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+
+
+

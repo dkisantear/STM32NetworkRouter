@@ -1,0 +1,13 @@
+# ========================================
+# QUICK UART TEST - Copy/paste this
+# ========================================
+
+# Install pyserial if needed
+python3 -c "import serial" 2>/dev/null || pip3 install pyserial --break-system-packages
+
+# Check UART device
+ls -l /dev/serial0 || ls -l /dev/ttyAMA0
+
+# Run test (make sure pi_uart_test.py is in current directory)
+python3 pi_uart_test.py
+

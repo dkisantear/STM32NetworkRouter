@@ -1,0 +1,82 @@
+# ========================================
+# Quick UART Test - Copy/paste this into Pi terminal
+# ========================================
+
+echo "========================================"
+echo "STM32 UART Test Setup & Run"
+echo "========================================"
+echo ""
+
+# Check if UART device exists
+echo "1. Checking UART device..."
+if [ -e /dev/serial0 ]; then
+    echo "   ✅ /dev/serial0 exists"
+    ls -l /dev/serial0
+else
+    echo "   ❌ /dev/serial0 not found"
+    echo "   Trying /dev/ttyAMA0..."
+    if [ -e /dev/ttyAMA0 ]; then
+        echo "   ✅ /dev/ttyAMA0 exists (will use this)"
+    else
+        echo "   ❌ No UART device found"
+        echo "   → Make sure UART is enabled: sudo raspi-config"
+        exit 1
+    fi
+fi
+echo ""
+
+# Check/install pyserial
+echo "2. Checking pyserial..."
+python3 -c "import serial" 2>/dev/null && echo "   ✅ pyserial installed" || {
+    echo "   Installing pyserial..."
+    pip3 install pyserial --break-system-packages || sudo apt-get install -y python3-serial
+}
+echo ""
+
+# Check permissions
+echo "3. Checking permissions..."
+if groups | grep -q dialout; then
+    echo "   ✅ User in dialout group"
+else
+    echo "   ⚠️  Adding to dialout group (may need logout/login)"
+    sudo usermod -a -G dialout $USER
+fi
+echo ""
+
+# Check if test script exists
+echo "4. Checking test script..."
+if [ -f "pi_uart_test.py" ]; then
+    echo "   ✅ pi_uart_test.py found"
+    chmod +x pi_uart_test.py
+else
+    echo "   ❌ pi_uart_test.py not found in current directory"
+    echo "   Current directory: $(pwd)"
+    echo "   Please cd to the directory with pi_uart_test.py"
+    exit 1
+fi
+echo ""
+
+# Hardware checklist
+echo "========================================"
+echo "📋 Hardware Checklist:"
+echo "========================================"
+echo "   ☐ STM32 PA2 (TX) → Pi Pin 10 (RXD)"
+echo "   ☐ STM32 PA3 (RX) → Pi Pin 8  (TXD)"
+echo "   ☐ STM32 GND      → Pi GND"
+echo ""
+echo "   Is hardware connected? (y/n)"
+read -t 5 answer || answer="y"
+echo ""
+
+# Run the test
+echo "========================================"
+echo "🚀 Starting UART Test..."
+echo "========================================"
+echo ""
+echo "Expected: You should see 'STM32_ALIVE' messages every ~1 second"
+echo "Press Ctrl+C to stop"
+echo ""
+sleep 2
+
+python3 pi_uart_test.py
+

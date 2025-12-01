@@ -1,0 +1,155 @@
+# ========================================
+# Quick Start: STM32 Bridge Script
+# Copy/paste this into Pi terminal
+# ========================================
+
+echo "Starting STM32 Bridge Setup..."
+
+# Step 1: Install dependencies if needed
+python3 -c "import serial, requests" 2>/dev/null || {
+    echo "Installing dependencies..."
+    pip3 install pyserial requests --break-system-packages
+}
+
+# Step 2: Create the script file
+cat > ~/pi_stm32_bridge.py << 'SCRIPT_EOF'
+#!/usr/bin/env python3
+import serial
+import requests
+import time
+import sys
+import logging
+import os
+
+UART_DEVICE = "/dev/ttyAMA0"
+UART_BAUDRATE = 38400
+API_URL = "https://blue-desert-0c2a27e1e.3.azurestaticapps.net/api/stm32-status"
+DEVICE_ID = "stm32-main"
+HEARTBEAT_MESSAGE = "STM32_ALIVE"
+LOG_FILE = os.path.expanduser("~/stm32-bridge.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(LOG_FILE),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+
+logger = logging.getLogger(__name__)
+
+def send_status_to_azure(status):
+    payload = {"deviceId": DEVICE_ID, "status": status}
+    try:
+        response = requests.post(API_URL, json=payload, headers={"Content-Type": "application/json"}, timeout=10)
+        response.raise_for_status()
+        logger.info(f"✅ Status sent: {status}")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to send: {e}")
+        return False
+
+def main():
+    logger.info("🚀 STM32 Bridge Starting...")
+    logger.info(f"UART: {UART_DEVICE} @ {UART_BAUDRATE}")
+    logger.info(f"API: {API_URL}")
+    
+    ser = None
+    last_message_time = None
+    last_status_sent = None
+    
+    try:
+        ser = serial.Serial(UART_DEVICE, UART_BAUDRATE, timeout=1.0)
+        logger.info("✅ Serial port opened")
+        
+        send_status_to_azure("online")
+        last_status_sent = "online"
+        
+        logger.info("👂 Listening for STM32 messages...")
+        
+        while True:
+            try:
+                line = ser.readline().decode("utf-8", errors="ignore").strip()
+                
+                if line and (HEARTBEAT_MESSAGE in line or line == HEARTBEAT_MESSAGE):
+                    last_message_time = time.time()
+                    if last_status_sent != "online":
+                        send_status_to_azure("online")
+                        last_status_sent = "online"
+                
+                if last_message_time and (time.time() - last_message_time > 10):
+                    if last_status_sent != "offline":
+                        logger.warning("⚠️  Timeout - marking offline")
+                        send_status_to_azure("offline")
+                        last_status_sent = "offline"
+                        
+            except Exception as e:
+                logger.error(f"Error: {e}")
+            
+            time.sleep(0.1)
+            
+    except KeyboardInterrupt:
+        logger.info("🛑 Shutting down...")
+        send_status_to_azure("offline")
+    except Exception as e:
+        logger.error(f"❌ Fatal error: {e}")
+    finally:
+        if ser and ser.is_open:
+            ser.close()
+
+if __name__ == "__main__":
+    main()
+SCRIPT_EOF
+
+chmod +x ~/pi_stm32_bridge.py
+echo "✅ Script created: ~/pi_stm32_bridge.py"
+echo ""
+
+# Step 3: Quick UART test
+echo "Testing UART connection..."
+python3 << 'TEST_EOF'
+import serial
+import time
+try:
+    ser = serial.Serial("/dev/ttyAMA0", 38400, timeout=1)
+    print("✅ UART opened")
+    print("Listening for 5 seconds...")
+    messages = 0
+    start = time.time()
+    while time.time() - start < 5:
+        if ser.in_waiting:
+            line = ser.readline().decode("utf-8", errors="ignore").strip()
+            if line:
+                messages += 1
+                print(f"📥 {repr(line)}")
+        time.sleep(0.1)
+    ser.close()
+    if messages > 0:
+        print(f"✅ UART working! Received {messages} message(s)")
+    else:
+        print("⚠️  No messages - check STM32")
+        exit(1)
+except Exception as e:
+    print(f"❌ UART error: {e}")
+    exit(1)
+TEST_EOF
+
+if [ $? -eq 0 ]; then
+    echo ""
+    echo "✅ UART test passed! Starting bridge script..."
+    echo ""
+    echo "To run in background:"
+    echo "  nohup python3 ~/pi_stm32_bridge.py > /dev/null 2>&1 &"
+    echo ""
+    echo "To run in foreground (see output):"
+    echo "  python3 ~/pi_stm32_bridge.py"
+    echo ""
+    echo "To check logs:"
+    echo "  tail -f ~/stm32-bridge.log"
+    echo ""
+else
+    echo ""
+    echo "❌ UART test failed. Fix UART connection first."
+fi
+

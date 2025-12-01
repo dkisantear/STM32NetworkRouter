@@ -1,0 +1,125 @@
+# ========================================
+# Copy this entire block into Pi terminal
+# Make sure you're in a directory where you want the test script
+# ========================================
+
+# Step 1: Install pyserial
+echo "Installing pyserial..."
+python3 -c "import serial" 2>/dev/null || pip3 install pyserial --break-system-packages || sudo apt-get install -y python3-serial
+
+# Step 2: Create the test script
+cat > pi_uart_test.py << 'PYTHON_EOF'
+#!/usr/bin/env python3
+import serial
+import time
+import sys
+
+UART_DEVICE = "/dev/serial0"
+BAUDRATE = 38400
+TIMEOUT = 1.0
+
+def main():
+    print("=" * 60)
+    print("STM32 UART Test - Raspberry Pi")
+    print("=" * 60)
+    print(f"Device: {UART_DEVICE}")
+    print(f"Baudrate: {BAUDRATE}")
+    print("=" * 60)
+    print()
+    
+    try:
+        print(f"📡 Opening {UART_DEVICE}...")
+        ser = serial.Serial(
+            port=UART_DEVICE,
+            baudrate=BAUDRATE,
+            timeout=TIMEOUT,
+            bytesize=serial.EIGHTBITS,
+            parity=serial.PARITY_NONE,
+            stopbits=serial.STOPBITS_ONE
+        )
+        print(f"✅ Serial port opened successfully!")
+        print()
+        
+        print("👂 Listening for STM32 messages...")
+        print("   Expected: 'STM32_ALIVE' every ~1 second")
+        print("   Press Ctrl+C to stop")
+        print()
+        
+        message_count = 0
+        last_message_time = None
+        
+        while True:
+            try:
+                line = ser.readline().decode("utf-8", errors="ignore").strip()
+                
+                if line:
+                    message_count += 1
+                    current_time = time.time()
+                    timestamp = time.strftime("%H:%M:%S")
+                    
+                    if last_message_time:
+                        time_diff = current_time - last_message_time
+                        print(f"[{timestamp}] #{message_count} | {time_diff:.3f}s | {repr(line)}")
+                    else:
+                        print(f"[{timestamp}] #{message_count} | {repr(line)}")
+                    
+                    last_message_time = current_time
+                    
+                    if line == "STM32_ALIVE":
+                        print(f"   ✅ Correct format!")
+                    else:
+                        print(f"   ⚠️  Unexpected: {repr(line)}")
+                    print()
+                    
+            except UnicodeDecodeError:
+                raw_data = ser.read(ser.in_waiting or 1)
+                print(f"⚠️  Garbage: {raw_data.hex()}")
+                
+    except serial.SerialException as e:
+        print(f"❌ Serial error: {e}")
+        print()
+        print("Try:")
+        print("  - Check device: ls -l /dev/serial0")
+        print("  - Try different device: Change UART_DEVICE to /dev/ttyAMA0")
+        print("  - Check permissions: sudo usermod -a -G dialout $USER")
+        sys.exit(1)
+        
+    except KeyboardInterrupt:
+        print()
+        print(f"🛑 Stopped after {message_count} message(s)")
+        
+    finally:
+        if 'ser' in locals() and ser.is_open:
+            ser.close()
+            print("📡 Serial port closed")
+
+if __name__ == "__main__":
+    main()
+PYTHON_EOF
+
+chmod +x pi_uart_test.py
+echo "✅ Test script created"
+
+# Step 3: Check UART device
+echo ""
+echo "Checking UART device..."
+ls -l /dev/serial0 2>/dev/null || ls -l /dev/ttyAMA0 2>/dev/null || echo "⚠️  No UART device found"
+
+# Step 4: Run the test
+echo ""
+echo "========================================"
+echo "🚀 Starting UART Test..."
+echo "========================================"
+echo ""
+echo "Make sure:"
+echo "  ☐ STM32 is powered on and running"
+echo "  ☐ STM32 PA2 (TX) → Pi Pin 10 (RXD)"
+echo "  ☐ STM32 PA3 (RX) → Pi Pin 8  (TXD)"
+echo "  ☐ GND connected"
+echo ""
+echo "Press Ctrl+C to stop"
+echo ""
+sleep 2
+
+python3 pi_uart_test.py
+

@@ -1,6 +1,5 @@
 import { LatencyCard } from '@/components/LatencyCard';
 import { StatusPill } from '@/components/StatusPill';
-import { Stm32StatusPill } from '@/components/Stm32StatusPill';
 
 const Index = () => {
   return (
@@ -15,13 +14,15 @@ const Index = () => {
 
         {/* Latency Cards - Vertical Stack */}
         <div className="space-y-6">
+          {/* Main Server shows STM32 connection status */}
           <LatencyCard serverName="Main Server" server="main" />
+          
+          {/* Raspberry Pi Gateway status */}
+          <StatusPill />
+          
+          {/* Other servers (for future boards) */}
           <LatencyCard serverName="UART Server 2" server="uart" />
           <LatencyCard serverName="Serial Server 3" server="serial" />
-          
-          {/* Status Cards - auto-detect connection */}
-          <StatusPill />
-          <Stm32StatusPill />
         </div>
 
         {/* Footer */}

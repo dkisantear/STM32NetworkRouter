@@ -56,7 +56,7 @@ def send_status_to_azure(status):
         return False
 
 def main():
-    """Main loop - reads UART and forwards to Azure"""
+    """Main loop - reads UART and forwards to Azure with robust error recovery"""
     logger.info("=" * 60)
     logger.info("🚀 STM32 UART Bridge Starting")
     logger.info(f"   UART Device: {UART_DEVICE}")
@@ -69,85 +69,127 @@ def main():
     ser = None
     last_message_time = None
     last_status_sent = None
+    last_heartbeat_time = time.time()
+    reconnect_delay = 5  # Seconds to wait before reconnecting
     
-    try:
-        # Open serial port
-        logger.info(f"📡 Opening {UART_DEVICE}...")
-        ser = serial.Serial(
-            port=UART_DEVICE,
-            baudrate=UART_BAUDRATE,
-            timeout=1.0,
-            bytesize=serial.EIGHTBITS,
-            parity=serial.PARITY_NONE,
-            stopbits=serial.STOPBITS_ONE
-        )
-        logger.info(f"✅ Serial port opened successfully!")
-        
-        # Send initial "online" status
-        send_status_to_azure("online")
-        last_status_sent = "online"
-        
-        logger.info("👂 Listening for STM32 messages...")
-        
-        while True:
-            try:
-                # Read line from UART
-                line = ser.readline().decode("utf-8", errors="ignore").strip()
-                
-                if line:
-                    logger.debug(f"Received: {repr(line)}")
-                    
-                    # Check if it's the expected heartbeat message
-                    if HEARTBEAT_MESSAGE in line or line == HEARTBEAT_MESSAGE:
-                        last_message_time = time.time()
-                        
-                        # Send "online" status if we haven't recently
-                        if last_status_sent != "online":
-                            send_status_to_azure("online")
-                            last_status_sent = "online"
-                
-                # Check for timeout - if no message received in TIMEOUT_SECONDS, mark as offline
-                if last_message_time is not None:
-                    time_since_last = time.time() - last_message_time
-                    if time_since_last > TIMEOUT_SECONDS:
-                        if last_status_sent != "offline":
-                            logger.warning(f"⚠️  No STM32 message for {time_since_last:.1f}s, marking as offline")
-                            send_status_to_azure("offline")
-                            last_status_sent = "offline"
-                
-            except UnicodeDecodeError:
-                # Handle garbage/partial data - ignore
-                pass
-            except Exception as e:
-                logger.error(f"❌ Error processing UART data: {e}")
-            
-            # Small delay to prevent CPU spinning
-            time.sleep(0.1)
-            
-    except serial.SerialException as e:
-        logger.error(f"❌ Serial port error: {e}")
-        logger.error("Troubleshooting:")
-        logger.error("  1. Check if UART is enabled: sudo raspi-config → Interface Options → Serial Port")
-        logger.error(f"  2. Verify device exists: ls -l {UART_DEVICE}")
-        logger.error("  3. Check permissions: sudo usermod -a -G dialout $USER")
-        sys.exit(1)
-        
-    except KeyboardInterrupt:
-        logger.info("🛑 Shutting down...")
-        # Send offline status before exiting
+    while True:  # Outer loop for auto-recovery
         try:
-            send_status_to_azure("offline")
-        except:
-            pass
+            # Try to open serial port (with retry logic)
+            if ser is None or not ser.is_open:
+                try:
+                    logger.info(f"📡 Opening {UART_DEVICE}...")
+                    ser = serial.Serial(
+                        port=UART_DEVICE,
+                        baudrate=UART_BAUDRATE,
+                        timeout=1.0,
+                        bytesize=serial.EIGHTBITS,
+                        parity=serial.PARITY_NONE,
+                        stopbits=serial.STOPBITS_ONE
+                    )
+                    logger.info(f"✅ Serial port opened successfully!")
+                    
+                    # Send initial "online" status
+                    if send_status_to_azure("online"):
+                        last_status_sent = "online"
+                        logger.info("✅ Initial status sent!")
+                    
+                except serial.SerialException as e:
+                    logger.error(f"❌ Failed to open serial port: {e}")
+                    logger.info(f"⏳ Retrying in {reconnect_delay} seconds...")
+                    # Send offline status if we can't open UART
+                    if last_status_sent != "offline":
+                        send_status_to_azure("offline")
+                        last_status_sent = "offline"
+                    time.sleep(reconnect_delay)
+                    continue
             
-    except Exception as e:
-        logger.error(f"❌ Unexpected error: {e}")
-        sys.exit(1)
+            logger.info("👂 Listening for STM32 messages...")
+            
+            # Main read loop
+            while True:
+                try:
+                    # Send periodic heartbeat status (every 30 seconds) even if no UART messages
+                    now = time.time()
+                    if now - last_heartbeat_time > 30:
+                        if last_status_sent != "online":
+                            logger.info("💓 Periodic heartbeat - sending online status")
+                            if send_status_to_azure("online"):
+                                last_status_sent = "online"
+                        last_heartbeat_time = now
+                    
+                    # Read line from UART
+                    if ser.in_waiting > 0:
+                        line = ser.readline().decode("utf-8", errors="ignore").strip()
+                        
+                        if line:
+                            logger.info(f"📥 Received: {repr(line)}")
+                            
+                            # Check if it's the expected heartbeat message
+                            if HEARTBEAT_MESSAGE in line or line == HEARTBEAT_MESSAGE:
+                                last_message_time = time.time()
+                                
+                                # Send "online" status when we receive a message
+                                if send_status_to_azure("online"):
+                                    last_status_sent = "online"
+                    
+                    # Check for timeout - if no message received in TIMEOUT_SECONDS, mark as offline
+                    if last_message_time is not None:
+                        time_since_last = time.time() - last_message_time
+                        if time_since_last > TIMEOUT_SECONDS:
+                            if last_status_sent != "offline":
+                                logger.warning(f"⚠️  No STM32 message for {time_since_last:.1f}s, marking as offline")
+                                if send_status_to_azure("offline"):
+                                    last_status_sent = "offline"
+                    
+                except UnicodeDecodeError:
+                    # Handle garbage/partial data - ignore and continue
+                    pass
+                except serial.SerialException as e:
+                    logger.error(f"❌ Serial port error during read: {e}")
+                    # Close port and break to reconnect
+                    try:
+                        ser.close()
+                    except:
+                        pass
+                    ser = None
+                    break  # Break inner loop, reconnect in outer loop
+                except Exception as e:
+                    logger.error(f"❌ Error processing UART data: {e}")
+                    # Continue running - don't crash on errors
+                
+                # Small delay to prevent CPU spinning
+                time.sleep(0.1)
+                
+        except KeyboardInterrupt:
+            logger.info("🛑 Shutting down...")
+            # Send offline status before exiting
+            try:
+                send_status_to_azure("offline")
+            except:
+                pass
+            break  # Exit outer loop
+            
+        except Exception as e:
+            logger.error(f"❌ Unexpected error: {e}")
+            logger.info("⏳ Restarting in 5 seconds...")
+            # Close serial port if open
+            try:
+                if ser and ser.is_open:
+                    ser.close()
+            except:
+                pass
+            ser = None
+            time.sleep(5)
+            # Continue outer loop to retry
         
-    finally:
-        if ser and ser.is_open:
-            ser.close()
-            logger.info("📡 Serial port closed")
+        finally:
+            # Only close if we're actually exiting (not restarting)
+            if ser and ser.is_open:
+                try:
+                    ser.close()
+                    logger.info("📡 Serial port closed")
+                except:
+                    pass
 
 if __name__ == "__main__":
     main()
