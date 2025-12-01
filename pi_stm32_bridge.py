@@ -130,13 +130,20 @@ def main():
                         if line:
                             logger.info(f"📥 Received: {repr(line)}")
                             
+                            # Update last_message_time for ANY received message (not just heartbeat)
+                            # This proves UART is working, even if message format is unexpected
+                            last_message_time = time.time()
+                            
                             # Check if it's the expected heartbeat message
                             if HEARTBEAT_MESSAGE in line or line == HEARTBEAT_MESSAGE:
-                                last_message_time = time.time()
-                                
-                                # Send "online" status when we receive a message
+                                # Send "online" status when we receive heartbeat
                                 if send_status_to_azure("online"):
                                     last_status_sent = "online"
+                            else:
+                                # Received a message but not the heartbeat (e.g., DATA:X)
+                                # Still consider UART connected, but don't update Azure status yet
+                                # (Wait for actual heartbeat or timeout)
+                                logger.debug(f"   (Non-heartbeat message: {line})")
                     
                     except OSError as e:
                         # Handle "device reports readiness but returned no data" error
@@ -149,11 +156,16 @@ def main():
                     # Check for timeout - if no message received in TIMEOUT_SECONDS, mark as offline
                     if last_message_time is not None:
                         time_since_last = time.time() - last_message_time
+                        # Log timeout warning at 10 seconds (before actually timing out)
+                        if 10 <= time_since_last <= 10.5:
+                            logger.warning(f"⚠️  No STM32 message for {time_since_last:.1f}s...")
                         if time_since_last > TIMEOUT_SECONDS:
                             if last_status_sent != "offline":
                                 logger.warning(f"⚠️  No STM32 message for {time_since_last:.1f}s, marking as offline")
                                 if send_status_to_azure("offline"):
                                     last_status_sent = "offline"
+                            # Reset timeout check to avoid spamming logs
+                            last_message_time = time.time() - TIMEOUT_SECONDS + 5
                     
                 except UnicodeDecodeError:
                     # Handle garbage/partial data - ignore and continue
