@@ -15,7 +15,7 @@ import os
 UART_DEVICE = "/dev/ttyAMA0"  # Pi 5 UART device
 UART_BAUDRATE = 38400
 API_URL = "https://blue-desert-0c2a27e1e.3.azurestaticapps.net/api/stm32-status"
-DEVICE_ID = "stm32-main"
+DEVICE_ID = "stm32-master"  # Must match frontend useMasterStatus hook
 TIMEOUT_SECONDS = 10  # If no UART message received in this time, mark as offline
 HEARTBEAT_MESSAGE = "STM32_ALIVE"
 
@@ -133,10 +133,14 @@ def main():
                                 if send_status_to_azure("online"):
                                     last_status_sent = "online"
                     
-                    # Check for timeout - if no message received in TIMEOUT_SECONDS, mark as offline
+                    # Check for timeout - only mark offline if we've received messages before and they stop
+                    # If Master board isn't sending data yet, we rely on heartbeat to keep status online
                     if last_message_time is not None:
                         time_since_last = time.time() - last_message_time
-                        if time_since_last > TIMEOUT_SECONDS:
+                        # Only timeout if we've actually received a message before (proving connection worked)
+                        # If last_message_time was just initialized, don't timeout - rely on heartbeat
+                        if time_since_last > TIMEOUT_SECONDS and (time.time() - last_message_time) < (TIMEOUT_SECONDS * 10):
+                            # Only mark offline if we had messages and they stopped
                             if last_status_sent != "offline":
                                 logger.warning(f"⚠️  No STM32 message for {time_since_last:.1f}s, marking as offline")
                                 if send_status_to_azure("offline"):
