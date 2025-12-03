@@ -143,10 +143,10 @@ def main():
                     )
                     logger.info(f"✅ Serial port opened successfully!")
                     
-                    # Send initial "online" status
-                    if send_status_to_azure("online"):
-                        last_status_sent = "online"
-                        logger.info("✅ Initial status sent!")
+                    # Send initial "offline" status - will change to "online" when we receive heartbeat
+                    if send_status_to_azure("offline"):
+                        last_status_sent = "offline"
+                        logger.info("✅ Initial status sent: offline (waiting for STM32 heartbeat...)")
                     
                 except serial.SerialException as e:
                     logger.error(f"❌ Failed to open serial port: {e}")
@@ -181,14 +181,8 @@ def main():
                                 logger.error(f"❌ Failed to send command {command_id}")
                         last_command_poll_time = now
                     
-                    # Send periodic heartbeat status (every 30 seconds) - ALWAYS send, like Pi Gateway
-                    # This ensures Master STM32 shows as "online" as long as bridge script is running
-                    if now - last_heartbeat_time > 30:
-                        logger.info("💓 Periodic heartbeat - sending online status to Azure")
-                        if send_status_to_azure("online"):
-                            last_status_sent = "online"
-                            logger.info("✅ Heartbeat sent successfully")
-                        last_heartbeat_time = now
+                    # Don't send periodic heartbeat - only mark online when we receive actual STM32 heartbeat
+                    # This ensures status accurately reflects STM32 connection state
                     
                     # Read line from UART
                     if ser.in_waiting > 0:
@@ -197,26 +191,34 @@ def main():
                         if line:
                             logger.info(f"📥 Received: {repr(line)}")
                             
+                            # Update last_message_time for ANY received message
+                            last_message_time = time.time()
+                            
                             # Check if it's the expected heartbeat message
                             if HEARTBEAT_MESSAGE in line or line == HEARTBEAT_MESSAGE:
-                                last_message_time = time.time()
-                                
-                                # Send "online" status when we receive a message
+                                # Only mark as "online" when we receive actual heartbeat from STM32
+                                if last_status_sent != "online":
+                                    logger.info("✅ Received STM32 heartbeat - marking as online")
+                                if send_status_to_azure("online"):
+                                    last_status_sent = "online"
+                            else:
+                                # Received other message - also mark as online (UART is working)
+                                if last_status_sent != "online":
+                                    logger.info("✅ Received UART data from STM32 - marking as online")
                                 if send_status_to_azure("online"):
                                     last_status_sent = "online"
                     
-                    # Check for timeout - only mark offline if we've received messages before and they stop
-                    # If Master board isn't sending data yet, we rely on heartbeat to keep status online
+                    # Check for timeout - if we received messages before but they stopped, mark offline
                     if last_message_time is not None:
                         time_since_last = time.time() - last_message_time
-                        # Only timeout if we've actually received a message before (proving connection worked)
-                        # If last_message_time was just initialized, don't timeout - rely on heartbeat
-                        if time_since_last > TIMEOUT_SECONDS and (time.time() - last_message_time) < (TIMEOUT_SECONDS * 10):
-                            # Only mark offline if we had messages and they stopped
+                        if time_since_last > TIMEOUT_SECONDS:
+                            # We had messages but they stopped - STM32 disconnected
                             if last_status_sent != "offline":
-                                logger.warning(f"⚠️  No STM32 message for {time_since_last:.1f}s, marking as offline")
+                                logger.warning(f"⚠️  No STM32 message for {time_since_last:.1f}s - marking as offline")
                                 if send_status_to_azure("offline"):
                                     last_status_sent = "offline"
+                                # Reset timeout check to avoid spamming
+                                last_message_time = None
                     
                 except UnicodeDecodeError:
                     # Handle garbage/partial data - ignore and continue
