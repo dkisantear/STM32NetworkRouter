@@ -57,7 +57,7 @@ export const MasterStatusCard = () => {
           )}
         />
         <div className="flex-1">
-          <p className="text-sm font-medium text-foreground">Master STM32 Board</p>
+          <p className="text-sm font-medium text-foreground">Master STM32</p>
           <p className="text-xs text-muted-foreground mt-1">
             {getStatusDisplay()}
           </p>

@@ -16,11 +16,8 @@ const Index = () => {
 
         {/* Status Cards */}
         <div className="space-y-6">
-          {/* Master STM32 Board status */}
+          {/* Master STM32 status */}
           <MasterStatusCard />
-          
-          {/* Main Server shows STM32 connection status */}
-          <LatencyCard serverName="Main Server" server="main" />
           
           {/* Raspberry Pi Gateway status */}
           <StatusPill />
