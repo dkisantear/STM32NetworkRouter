@@ -1,0 +1,69 @@
+================================================================================
+QUICK FIX FOR PI BRIDGE SCRIPT - COPY THESE COMMANDS
+================================================================================
+
+The bridge script on your Pi still has the wrong device ID.
+You need to update it manually. Here are the exact changes:
+
+================================================================================
+STEP 1: SSH into your Pi and edit the file
+================================================================================
+
+ssh pi5@192.168.1.160
+nano pi_stm32_bridge.py
+
+================================================================================
+STEP 2: Find line 18 and change the device ID
+================================================================================
+
+FIND THIS LINE (around line 18):
+    DEVICE_ID = "stm32-main"
+
+CHANGE IT TO:
+    DEVICE_ID = "stm32-master"
+
+================================================================================
+STEP 3: Find line 91 (after "Serial port opened successfully!")
+================================================================================
+
+FIND THIS SECTION:
+    logger.info(f"✅ Serial port opened successfully!")
+    
+    # Initialize last_message_time when port opens
+    last_message_time = time.time()
+    
+    # Send initial "online" status
+
+CHANGE IT TO (remove the last_message_time initialization):
+    logger.info(f"✅ Serial port opened successfully!")
+    
+    # Don't initialize last_message_time - only set when we receive messages
+    # This prevents false offline status when Master board isn't sending data yet
+    last_message_time = None
+    
+    # Send initial "online" status
+
+================================================================================
+STEP 4: Save and restart
+================================================================================
+
+Save: Press Ctrl+X, then Y, then Enter
+
+Then restart:
+    pkill -f pi_stm32_bridge.py
+    python3 pi_stm32_bridge.py
+
+================================================================================
+VERIFY IT'S WORKING
+================================================================================
+
+Check the logs:
+    tail -f ~/stm32-bridge.log
+
+You should see:
+    Device ID: stm32-master  (not stm32-main!)
+    Heartbeats every 30 seconds
+    No timeout warnings if Master board isn't sending data yet
+
+================================================================================
+
