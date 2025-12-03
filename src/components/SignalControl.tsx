@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { useMasterStatus } from '@/hooks/useMasterStatus';
 
 type SendMode = 'serial' | 'uart';
 
@@ -11,7 +12,9 @@ export const SignalControl = () => {
   const [value, setValue] = useState<string>('');
   const [sendMode, setSendMode] = useState<SendMode>('uart');
   const [isSending, setIsSending] = useState(false);
+  const [lastSentValue, setLastSentValue] = useState<number | null>(null);
   const { toast } = useToast();
+  const masterStatus = useMasterStatus();
 
   const validateValue = (val: string): boolean => {
     const num = parseInt(val, 10);
@@ -66,9 +69,11 @@ export const SignalControl = () => {
         throw new Error('Failed to send command');
       }
 
+      const result = await response.json();
+      setLastSentValue(num);
       toast({
         title: 'Command Sent',
-        description: `Sent value ${num} via ${sendMode.toUpperCase()}`,
+        description: `Sent value ${num} via ${sendMode.toUpperCase()} to Master board`,
       });
     } catch (error) {
       toast({
@@ -81,15 +86,53 @@ export const SignalControl = () => {
     }
   };
 
+  // Get status display info
+  const getStatusDisplay = () => {
+    if (masterStatus.loading) return 'Checking...';
+    if (masterStatus.error) return 'Error';
+    if (masterStatus.status === 'online') return 'Connected';
+    if (masterStatus.status === 'offline') return 'Disconnected';
+    return 'Unknown';
+  };
+
+  const getStatusColor = () => {
+    if (masterStatus.loading) return 'bg-muted-foreground';
+    if (masterStatus.error) return 'bg-destructive';
+    if (masterStatus.status === 'online') return 'bg-primary';
+    if (masterStatus.status === 'offline') return 'bg-destructive';
+    return 'bg-muted-foreground';
+  };
+
   return (
     <Card className="p-6 border border-border rounded-lg shadow-lg">
       <div className="space-y-4">
-        <div>
-          <p className="text-sm font-medium text-foreground mb-2">Send Signal</p>
-          <p className="text-xs text-muted-foreground mb-4">
-            Enter a value (0-16) to send to STM32
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-foreground mb-2">Send Signal to Master Board</p>
+            <p className="text-xs text-muted-foreground">
+              Enter a value (0-16) to replicate on Master STM32 DIP switch
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div
+              className={cn(
+                'w-2 h-2 rounded-full transition-all',
+                getStatusColor(),
+                masterStatus.status === 'online' && 'shadow-[0_0_8px_hsl(var(--primary))]',
+                masterStatus.loading && 'animate-pulse'
+              )}
+            />
+            <span className="text-xs text-muted-foreground">{getStatusDisplay()}</span>
+          </div>
         </div>
+
+        {lastSentValue !== null && (
+          <div className="px-3 py-2 bg-muted rounded-md">
+            <p className="text-xs text-muted-foreground">
+              Last sent: <span className="text-foreground font-medium">{lastSentValue}</span> via {sendMode.toUpperCase()}
+            </p>
+          </div>
+        )}
 
         {/* Toggle Buttons */}
         <div className="flex gap-2">

@@ -1,6 +1,7 @@
 import { LatencyCard } from '@/components/LatencyCard';
 import { StatusPill } from '@/components/StatusPill';
 import { SignalControl } from '@/components/SignalControl';
+import { MasterStatusCard } from '@/components/MasterStatusCard';
 
 const Index = () => {
   return (
@@ -15,6 +16,9 @@ const Index = () => {
 
         {/* Status Cards */}
         <div className="space-y-6">
+          {/* Master STM32 Board status */}
+          <MasterStatusCard />
+          
           {/* Main Server shows STM32 connection status */}
           <LatencyCard serverName="Main Server" server="main" />
           

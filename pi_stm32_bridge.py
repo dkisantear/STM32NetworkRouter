@@ -12,11 +12,12 @@ import logging
 import os
 
 # Configuration
-UART_DEVICE = "/dev/ttyAMA0"  # Pi 5 UART device
+UART_DEVICE = "/dev/ttyAMA0"  # Pi 5 UART device (connected to Master STM32 UART2)
 UART_BAUDRATE = 38400  # Must match STM32 baud rate
 API_URL = "https://blue-desert-0c2a27e1e.3.azurestaticapps.net/api/stm32-status"
 COMMAND_API_URL = "https://blue-desert-0c2a27e1e.3.azurestaticapps.net/api/stm32-command"
-DEVICE_ID = "stm32-main"
+MASTER_DEVICE_ID = "stm32-master"  # Master STM32 board
+SLAVE_DEVICE_ID = "stm32-main"  # Slave STM32 board (if still connected)
 TIMEOUT_SECONDS = 15  # If no UART message received in this time, mark as offline
 HEARTBEAT_MESSAGE = "STM32_ALIVE"
 COMMAND_POLL_INTERVAL = 2  # Poll for commands every 2 seconds
@@ -35,10 +36,10 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-def send_status_to_azure(status):
+def send_status_to_azure(device_id, status):
     """Send STM32 status to Azure Function"""
     payload = {
-        "deviceId": DEVICE_ID,
+        "deviceId": device_id,
         "status": status
     }
     
@@ -51,18 +52,18 @@ def send_status_to_azure(status):
         )
         response.raise_for_status()
         result = response.json()
-        logger.info(f"✅ Status sent to Azure: {status}")
+        logger.info(f"✅ Status sent to Azure for {device_id}: {status}")
         return True
     except Exception as e:
-        logger.error(f"❌ Failed to send status to Azure: {e}")
+        logger.error(f"❌ Failed to send status to Azure for {device_id}: {e}")
         return False
 
 def get_pending_commands():
-    """Poll Azure for pending commands"""
+    """Poll Azure for pending commands for Master board"""
     try:
         response = requests.get(
             COMMAND_API_URL,
-            params={"deviceId": DEVICE_ID},
+            params={"deviceId": MASTER_DEVICE_ID},
             timeout=5
         )
         response.raise_for_status()
@@ -87,18 +88,23 @@ def mark_command_sent(command_id):
         return False
 
 def send_command_to_stm32(ser, value, mode):
-    """Send command to STM32 via UART"""
+    """Send command to Master STM32 via UART2
+    Format: Simple decimal value (0-16) matching DIP switch
+    The Master board will replicate this value on its DIP switch output
+    """
     if not ser or not ser.is_open:
         logger.error("❌ Cannot send command: serial port not open")
         return False
     
     try:
-        # Format command based on mode
-        # For now, both serial and uart use UART interface
-        # Format: "CMD:{mode}:{value}\n"
-        command = f"CMD:{mode}:{value}\n"
+        # Send value as decimal string (0-16) matching DIP switch
+        # Format: "{value}\n" - simple and matches DIP switch range
+        command = f"{value}\n"
         ser.write(command.encode('utf-8'))
-        logger.info(f"📤 Sent command to STM32: {command.strip()}")
+        logger.info(f"📤 Sent command to Master STM32: {value} (mode: {mode})")
+        
+        # Small delay to ensure transmission completes
+        time.sleep(0.05)
         return True
     except Exception as e:
         logger.error(f"❌ Failed to send command to STM32: {e}")
@@ -108,19 +114,20 @@ def main():
     """Main loop - reads UART and forwards to Azure with robust error recovery"""
     logger.info("=" * 60)
     logger.info("🚀 STM32 UART Bridge Starting")
-    logger.info(f"   UART Device: {UART_DEVICE}")
+    logger.info(f"   UART Device: {UART_DEVICE} (Master STM32 UART2)")
     logger.info(f"   Baudrate: {UART_BAUDRATE}")
     logger.info(f"   API URL: {API_URL}")
-    logger.info(f"   Device ID: {DEVICE_ID}")
+    logger.info(f"   Master Device ID: {MASTER_DEVICE_ID}")
     logger.info(f"   Log File: {LOG_FILE}")
     logger.info("=" * 60)
     
     ser = None
     last_message_time = None
-    last_status_sent = None
+    last_master_status_sent = None
     last_heartbeat_time = time.time()
     last_command_poll_time = time.time()
     reconnect_delay = 5  # Seconds to wait before reconnecting
+    last_received_value = None  # Track last value received from Master board
     
     while True:  # Outer loop for auto-recovery
         try:
@@ -138,10 +145,10 @@ def main():
                     )
                     logger.info(f"✅ Serial port opened successfully!")
                     
-                    # Send initial "online" status
-                    if send_status_to_azure("online"):
-                        last_status_sent = "online"
-                        logger.info("✅ Initial status sent!")
+                    # Send initial "online" status for Master board
+                    if send_status_to_azure(MASTER_DEVICE_ID, "online"):
+                        last_master_status_sent = "online"
+                        logger.info("✅ Initial Master board status sent!")
                     
                     # Initialize last_message_time so we can detect if messages stop
                     # Use a time slightly in the past so we don't immediately timeout
@@ -151,9 +158,9 @@ def main():
                     logger.error(f"❌ Failed to open serial port: {e}")
                     logger.info(f"⏳ Retrying in {reconnect_delay} seconds...")
                     # Send offline status if we can't open UART
-                    if last_status_sent != "offline":
-                        send_status_to_azure("offline")
-                        last_status_sent = "offline"
+                    if last_master_status_sent != "offline":
+                        send_status_to_azure(MASTER_DEVICE_ID, "offline")
+                        last_master_status_sent = "offline"
                     time.sleep(reconnect_delay)
                     continue
             
@@ -172,20 +179,20 @@ def main():
                             value = cmd.get("value")
                             mode = cmd.get("mode", "uart")
                             
-                            logger.info(f"📨 Processing command: {value} via {mode}")
+                            logger.info(f"📨 Processing command: value={value} mode={mode}")
                             if send_command_to_stm32(ser, value, mode):
                                 mark_command_sent(command_id)
-                                logger.info(f"✅ Command {command_id} sent successfully")
+                                logger.info(f"✅ Command {command_id} sent successfully to Master board")
                             else:
                                 logger.error(f"❌ Failed to send command {command_id}")
                         last_command_poll_time = now
                     
                     # Send periodic heartbeat status (every 30 seconds) even if no UART messages
                     if now - last_heartbeat_time > 30:
-                        if last_status_sent != "online":
-                            logger.info("💓 Periodic heartbeat - sending online status")
-                            if send_status_to_azure("online"):
-                                last_status_sent = "online"
+                        if last_master_status_sent != "online":
+                            logger.info("💓 Periodic heartbeat - sending Master board online status")
+                            if send_status_to_azure(MASTER_DEVICE_ID, "online"):
+                                last_master_status_sent = "online"
                         last_heartbeat_time = now
                     
                     # Read from UART - use same method as working test script (readline)
@@ -195,26 +202,36 @@ def main():
                         line = ser.readline().decode("utf-8", errors="ignore").strip()
                         
                         if line:
-                            logger.info(f"📥 Received: {repr(line)}")
+                            logger.info(f"📥 Received from Master: {repr(line)}")
                             
                             # Update last_message_time for ANY received message
                             # This proves UART is working
                             last_message_time = time.time()
                             
+                            # Try to parse the received value (could be DIP switch value or heartbeat)
+                            try:
+                                # Check if it's a numeric value (DIP switch reading)
+                                received_value = int(line.strip())
+                                if 0 <= received_value <= 16:
+                                    last_received_value = received_value
+                                    logger.info(f"📊 Master board DIP switch value: {received_value}")
+                            except ValueError:
+                                # Not a number, could be heartbeat or other message
+                                pass
+                            
                             # Check if it's the expected heartbeat message
                             if HEARTBEAT_MESSAGE in line:
                                 # Send "online" status when we receive heartbeat
-                                if last_status_sent != "online":
-                                    logger.info(f"✅ Received heartbeat - updating status to online")
-                                if send_status_to_azure("online"):
-                                    last_status_sent = "online"
+                                if last_master_status_sent != "online":
+                                    logger.info(f"✅ Received heartbeat - updating Master status to online")
+                                if send_status_to_azure(MASTER_DEVICE_ID, "online"):
+                                    last_master_status_sent = "online"
                             else:
-                                # Received other message (e.g., DATA:X) - UART is working
-                                # If we're receiving any messages, mark as online
-                                if last_status_sent != "online":
-                                    logger.info(f"📡 Receiving UART data - marking online")
-                                if send_status_to_azure("online"):
-                                    last_status_sent = "online"
+                                # Received other message - UART is working, mark as online
+                                if last_master_status_sent != "online":
+                                    logger.info(f"📡 Receiving UART data from Master - marking online")
+                                if send_status_to_azure(MASTER_DEVICE_ID, "online"):
+                                    last_master_status_sent = "online"
                     
                     except OSError as e:
                         # Handle "device reports readiness but returned no data" error
@@ -231,10 +248,10 @@ def main():
                         if 10 <= time_since_last <= 10.5:
                             logger.warning(f"⚠️  No STM32 message for {time_since_last:.1f}s...")
                         if time_since_last > TIMEOUT_SECONDS:
-                            if last_status_sent != "offline":
-                                logger.warning(f"⚠️  No STM32 message for {time_since_last:.1f}s, marking as offline")
-                                if send_status_to_azure("offline"):
-                                    last_status_sent = "offline"
+                            if last_master_status_sent != "offline":
+                                logger.warning(f"⚠️  No Master STM32 message for {time_since_last:.1f}s, marking as offline")
+                                if send_status_to_azure(MASTER_DEVICE_ID, "offline"):
+                                    last_master_status_sent = "offline"
                             # Reset timeout check to avoid spamming logs
                             last_message_time = time.time() - TIMEOUT_SECONDS + 5
                     
@@ -278,7 +295,7 @@ def main():
             logger.info("🛑 Shutting down...")
             # Send offline status before exiting
             try:
-                send_status_to_azure("offline")
+                send_status_to_azure(MASTER_DEVICE_ID, "offline")
             except:
                 pass
             break  # Exit outer loop
