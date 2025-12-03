@@ -18,15 +18,15 @@ export const SignalControl = () => {
 
   const validateValue = (val: string): boolean => {
     const num = parseInt(val, 10);
-    return !isNaN(num) && num >= 0 && num <= 16;
+    return !isNaN(num) && num >= 0 && num <= 15;
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const inputValue = e.target.value;
-    // Allow empty input or valid numbers 0-16
+    // Allow empty input or valid numbers 0-15
     if (inputValue === '' || /^\d+$/.test(inputValue)) {
       const num = parseInt(inputValue, 10);
-      if (inputValue === '' || (num >= 0 && num <= 16)) {
+      if (inputValue === '' || (num >= 0 && num <= 15)) {
         setValue(inputValue);
       }
     }
@@ -36,7 +36,7 @@ export const SignalControl = () => {
     if (value === '') {
       toast({
         title: 'Invalid Input',
-        description: 'Please enter a value between 0 and 16',
+        description: 'Please enter a value between 0 and 15',
         variant: 'destructive',
       });
       return;
@@ -46,7 +46,7 @@ export const SignalControl = () => {
     if (!validateValue(value)) {
       toast({
         title: 'Invalid Input',
-        description: 'Value must be between 0 and 16',
+        description: 'Value must be between 0 and 15',
         variant: 'destructive',
       });
       return;
@@ -110,7 +110,7 @@ export const SignalControl = () => {
           <div>
             <p className="text-sm font-medium text-foreground mb-2">Send Signal to Master Board</p>
             <p className="text-xs text-muted-foreground">
-              Enter a value (0-16) to replicate on Master STM32 DIP switch
+              Enter a value (0-15) to replicate on Master STM32 DIP switch
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -167,7 +167,7 @@ export const SignalControl = () => {
           <Input
             type="text"
             inputMode="numeric"
-            placeholder="0-16"
+            placeholder="0-15"
             value={value}
             onChange={handleInputChange}
             onKeyDown={(e) => {
