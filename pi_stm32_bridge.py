@@ -12,13 +12,15 @@ import logging
 import os
 
 # Configuration
-UART_DEVICE = "/dev/ttyAMA0"  # Pi 5 UART device (connected to Master STM32 UART2)
+# GPIO14/15 typically map to /dev/serial0 (symlink) or /dev/ttyAMA0
+# Try /dev/serial0 first (works on most Pi models), fallback to /dev/ttyAMA0
+UART_DEVICE = "/dev/serial0"  # GPIO14/15 UART (symlink, works on most Pi models)
 UART_BAUDRATE = 38400  # Must match STM32 baud rate
 API_URL = "https://blue-desert-0c2a27e1e.3.azurestaticapps.net/api/stm32-status"
 COMMAND_API_URL = "https://blue-desert-0c2a27e1e.3.azurestaticapps.net/api/stm32-command"
 MASTER_DEVICE_ID = "stm32-master"  # Master STM32 board
 SLAVE_DEVICE_ID = "stm32-main"  # Slave STM32 board (if still connected)
-TIMEOUT_SECONDS = 15  # If no UART message received in this time, mark as offline
+TIMEOUT_SECONDS = 30  # If no UART message received in this time, mark as offline (increased for Master board)
 HEARTBEAT_MESSAGE = "STM32_ALIVE"
 COMMAND_POLL_INTERVAL = 2  # Poll for commands every 2 seconds
 
@@ -131,31 +133,35 @@ def main():
     
     while True:  # Outer loop for auto-recovery
         try:
-            # Try to open serial port (with retry logic)
+            # Try to open serial port (with retry logic and device fallback)
             if ser is None or not ser.is_open:
-                try:
-                    logger.info(f"📡 Opening {UART_DEVICE}...")
-                    ser = serial.Serial(
-                        port=UART_DEVICE,
-                        baudrate=UART_BAUDRATE,
-                        timeout=1.0,
-                        bytesize=serial.EIGHTBITS,
-                        parity=serial.PARITY_NONE,
-                        stopbits=serial.STOPBITS_ONE
-                    )
-                    logger.info(f"✅ Serial port opened successfully!")
-                    
-                    # Send initial "online" status for Master board
-                    if send_status_to_azure(MASTER_DEVICE_ID, "online"):
-                        last_master_status_sent = "online"
-                        logger.info("✅ Initial Master board status sent!")
-                    
-                    # Initialize last_message_time so we can detect if messages stop
-                    # Use a time slightly in the past so we don't immediately timeout
-                    last_message_time = time.time() - 5  # Allow 5 second grace period
-                    
-                except serial.SerialException as e:
-                    logger.error(f"❌ Failed to open serial port: {e}")
+                uart_devices = [UART_DEVICE, "/dev/ttyAMA0", "/dev/ttyS0"]
+                device_opened = False
+                
+                for device in uart_devices:
+                    try:
+                        logger.info(f"📡 Trying to open {device}...")
+                        ser = serial.Serial(
+                            port=device,
+                            baudrate=UART_BAUDRATE,
+                            timeout=1.0,
+                            bytesize=serial.EIGHTBITS,
+                            parity=serial.PARITY_NONE,
+                            stopbits=serial.STOPBITS_ONE
+                        )
+                        logger.info(f"✅ Serial port opened successfully on {device}!")
+                        device_opened = True
+                        break
+                    except serial.SerialException as e:
+                        logger.debug(f"   Failed to open {device}: {e}")
+                        continue
+                
+                if not device_opened:
+                    logger.error(f"❌ Failed to open any UART device. Tried: {uart_devices}")
+                    logger.info("💡 Troubleshooting:")
+                    logger.info("   1. Check UART is enabled: sudo raspi-config → Interface Options → Serial Port")
+                    logger.info("   2. Verify device exists: ls -l /dev/serial0 /dev/ttyAMA0")
+                    logger.info("   3. Check permissions: sudo usermod -a -G dialout $USER")
                     logger.info(f"⏳ Retrying in {reconnect_delay} seconds...")
                     # Send offline status if we can't open UART
                     if last_master_status_sent != "offline":
@@ -163,6 +169,17 @@ def main():
                         last_master_status_sent = "offline"
                     time.sleep(reconnect_delay)
                     continue
+                
+                # Send initial "online" status for Master board
+                if send_status_to_azure(MASTER_DEVICE_ID, "online"):
+                    last_master_status_sent = "online"
+                    logger.info("✅ Initial Master board status sent!")
+                
+                # Initialize last_message_time so we can detect if messages stop
+                # Use a time slightly in the past so we don't immediately timeout
+                # For Master board, we'll keep it online initially even without messages
+                last_message_time = time.time() - (TIMEOUT_SECONDS - 10)  # Allow grace period before timeout
+                logger.info(f"⏱️  Timeout set to {TIMEOUT_SECONDS} seconds - Master board will stay online if connected")
             
             logger.info("👂 Listening for STM32 messages...")
             
