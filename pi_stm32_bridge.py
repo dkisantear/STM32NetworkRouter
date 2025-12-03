@@ -136,11 +136,17 @@ def main():
                     ser = serial.Serial(
                         port=UART_DEVICE,
                         baudrate=UART_BAUDRATE,
-                        timeout=1.0,
+                        timeout=0.5,  # Shorter timeout for more responsive checking
                         bytesize=serial.EIGHTBITS,
                         parity=serial.PARITY_NONE,
-                        stopbits=serial.STOPBITS_ONE
+                        stopbits=serial.STOPBITS_ONE,
+                        xonxoff=False,
+                        rtscts=False,
+                        dsrdtr=False
                     )
+                    # Flush any stale data
+                    ser.reset_input_buffer()
+                    ser.reset_output_buffer()
                     logger.info(f"✅ Serial port opened successfully!")
                     
                     # Send initial "offline" status - will change to "online" when we receive heartbeat
@@ -181,48 +187,61 @@ def main():
                                 logger.error(f"❌ Failed to send command {command_id}")
                         last_command_poll_time = now
                     
-                    # Don't send periodic heartbeat - only mark online when we receive actual STM32 heartbeat
-                    # This ensures status accurately reflects STM32 connection state
-                    
-                    # Read line from UART
+                    # Read data from UART - robust handling of partial/corrupted messages
                     if ser.in_waiting > 0:
-                        line = ser.readline().decode("utf-8", errors="ignore").strip()
+                        # ANY data available = STM32 is connected and active
+                        last_message_time = time.time()
                         
-                        if line:
-                            logger.info(f"📥 Received: {repr(line)}")
+                        # Mark as online immediately when we detect UART activity
+                        if last_status_sent != "online":
+                            logger.info("✅ Detected UART activity - marking as online")
+                        if send_status_to_azure("online"):
+                            last_status_sent = "online"
+                        
+                        try:
+                            # Read available bytes
+                            raw_data = ser.read(ser.in_waiting)
                             
-                            # Update last_message_time for ANY received message
-                            last_message_time = time.time()
-                            
-                            # Check if it's the expected heartbeat message
-                            if HEARTBEAT_MESSAGE in line or line == HEARTBEAT_MESSAGE:
-                                # Only mark as "online" when we receive actual heartbeat from STM32
-                                if last_status_sent != "online":
-                                    logger.info("✅ Received STM32 heartbeat - marking as online")
-                                if send_status_to_azure("online"):
-                                    last_status_sent = "online"
-                            else:
-                                # Received other message - also mark as online (UART is working)
-                                if last_status_sent != "online":
-                                    logger.info("✅ Received UART data from STM32 - marking as online")
-                                if send_status_to_azure("online"):
-                                    last_status_sent = "online"
+                            # Try to decode and log what we received
+                            try:
+                                text = raw_data.decode("utf-8", errors="ignore").strip()
+                                if text:
+                                    # Show first 100 chars to avoid log spam
+                                    display_text = text[:100] + "..." if len(text) > 100 else text
+                                    logger.info(f"📥 Received: {repr(display_text)}")
+                                    
+                                    # Check for heartbeat message
+                                    if HEARTBEAT_MESSAGE in text:
+                                        logger.debug("✅ Heartbeat message detected")
+                            except:
+                                # Can't decode as text - show hex instead
+                                hex_preview = raw_data[:20].hex()
+                                logger.debug(f"📥 Received raw data: {hex_preview}...")
+                                
+                        except Exception as e:
+                            logger.debug(f"Error reading UART data: {e}")
+                            # Still consider it activity (STM32 is connected)
                     
-                    # Check for timeout - if we received messages before but they stopped, mark offline
+                    # Check for timeout - mark offline if no activity for TIMEOUT_SECONDS
                     if last_message_time is not None:
                         time_since_last = time.time() - last_message_time
                         if time_since_last > TIMEOUT_SECONDS:
-                            # We had messages but they stopped - STM32 disconnected
+                            # No activity detected - STM32 likely disconnected
                             if last_status_sent != "offline":
-                                logger.warning(f"⚠️  No STM32 message for {time_since_last:.1f}s - marking as offline")
+                                logger.warning(f"⚠️  No STM32 activity for {time_since_last:.1f}s - marking as offline")
                                 if send_status_to_azure("offline"):
                                     last_status_sent = "offline"
-                                # Reset timeout check to avoid spamming
+                                # Reset to allow future detection
                                 last_message_time = None
                     
                 except UnicodeDecodeError:
-                    # Handle garbage/partial data - ignore and continue
-                    pass
+                    # Handle decode errors gracefully - still count as activity
+                    if ser.in_waiting > 0:
+                        last_message_time = time.time()
+                        if last_status_sent != "online":
+                            logger.info("✅ Detected UART activity - marking as online")
+                        if send_status_to_azure("online"):
+                            last_status_sent = "online"
                 except serial.SerialException as e:
                     logger.error(f"❌ Serial port error during read: {e}")
                     # Close port and break to reconnect
@@ -236,8 +255,8 @@ def main():
                     logger.error(f"❌ Error processing UART data: {e}")
                     # Continue running - don't crash on errors
                 
-                # Small delay to prevent CPU spinning
-                time.sleep(0.1)
+                # Small delay to prevent CPU spinning (reduced for faster response)
+                time.sleep(0.05)
                 
         except KeyboardInterrupt:
             logger.info("🛑 Shutting down...")
