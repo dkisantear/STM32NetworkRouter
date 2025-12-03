@@ -13,11 +13,13 @@ import os
 
 # Configuration
 UART_DEVICE = "/dev/ttyAMA0"  # Pi 5 UART device
-UART_BAUDRATE = 38400
+UART_BAUDRATE = 38400  # Must match STM32 baud rate
 API_URL = "https://blue-desert-0c2a27e1e.3.azurestaticapps.net/api/stm32-status"
+COMMAND_API_URL = "https://blue-desert-0c2a27e1e.3.azurestaticapps.net/api/stm32-command"
 DEVICE_ID = "stm32-main"
-TIMEOUT_SECONDS = 15  # If no UART message received in this time, mark as offline (increased from 10 to 15)
+TIMEOUT_SECONDS = 15  # If no UART message received in this time, mark as offline
 HEARTBEAT_MESSAGE = "STM32_ALIVE"
+COMMAND_POLL_INTERVAL = 2  # Poll for commands every 2 seconds
 
 # Use home directory for log file (no sudo needed)
 LOG_FILE = os.path.expanduser("~/stm32-bridge.log")
@@ -55,6 +57,53 @@ def send_status_to_azure(status):
         logger.error(f"❌ Failed to send status to Azure: {e}")
         return False
 
+def get_pending_commands():
+    """Poll Azure for pending commands"""
+    try:
+        response = requests.get(
+            COMMAND_API_URL,
+            params={"deviceId": DEVICE_ID},
+            timeout=5
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data.get("commands", [])
+    except Exception as e:
+        logger.debug(f"Failed to poll commands: {e}")
+        return []
+
+def mark_command_sent(command_id):
+    """Mark a command as sent in Azure"""
+    try:
+        response = requests.put(
+            COMMAND_API_URL,
+            json={"commandId": command_id, "status": "sent"},
+            timeout=5
+        )
+        response.raise_for_status()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to mark command as sent: {e}")
+        return False
+
+def send_command_to_stm32(ser, value, mode):
+    """Send command to STM32 via UART"""
+    if not ser or not ser.is_open:
+        logger.error("❌ Cannot send command: serial port not open")
+        return False
+    
+    try:
+        # Format command based on mode
+        # For now, both serial and uart use UART interface
+        # Format: "CMD:{mode}:{value}\n"
+        command = f"CMD:{mode}:{value}\n"
+        ser.write(command.encode('utf-8'))
+        logger.info(f"📤 Sent command to STM32: {command.strip()}")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to send command to STM32: {e}")
+        return False
+
 def main():
     """Main loop - reads UART and forwards to Azure with robust error recovery"""
     logger.info("=" * 60)
@@ -70,6 +119,7 @@ def main():
     last_message_time = None
     last_status_sent = None
     last_heartbeat_time = time.time()
+    last_command_poll_time = time.time()
     reconnect_delay = 5  # Seconds to wait before reconnecting
     
     while True:  # Outer loop for auto-recovery
@@ -112,8 +162,25 @@ def main():
             # Main read loop
             while True:
                 try:
-                    # Send periodic heartbeat status (every 30 seconds) even if no UART messages
                     now = time.time()
+                    
+                    # Poll for pending commands from Azure
+                    if now - last_command_poll_time > COMMAND_POLL_INTERVAL:
+                        commands = get_pending_commands()
+                        for cmd in commands:
+                            command_id = cmd.get("commandId")
+                            value = cmd.get("value")
+                            mode = cmd.get("mode", "uart")
+                            
+                            logger.info(f"📨 Processing command: {value} via {mode}")
+                            if send_command_to_stm32(ser, value, mode):
+                                mark_command_sent(command_id)
+                                logger.info(f"✅ Command {command_id} sent successfully")
+                            else:
+                                logger.error(f"❌ Failed to send command {command_id}")
+                        last_command_poll_time = now
+                    
+                    # Send periodic heartbeat status (every 30 seconds) even if no UART messages
                     if now - last_heartbeat_time > 30:
                         if last_status_sent != "online":
                             logger.info("💓 Periodic heartbeat - sending online status")
@@ -130,20 +197,24 @@ def main():
                         if line:
                             logger.info(f"📥 Received: {repr(line)}")
                             
-                            # Update last_message_time for ANY received message (not just heartbeat)
-                            # This proves UART is working, even if message format is unexpected
+                            # Update last_message_time for ANY received message
+                            # This proves UART is working
                             last_message_time = time.time()
                             
                             # Check if it's the expected heartbeat message
-                            if HEARTBEAT_MESSAGE in line or line == HEARTBEAT_MESSAGE:
+                            if HEARTBEAT_MESSAGE in line:
                                 # Send "online" status when we receive heartbeat
+                                if last_status_sent != "online":
+                                    logger.info(f"✅ Received heartbeat - updating status to online")
                                 if send_status_to_azure("online"):
                                     last_status_sent = "online"
                             else:
-                                # Received a message but not the heartbeat (e.g., DATA:X)
-                                # Still consider UART connected, but don't update Azure status yet
-                                # (Wait for actual heartbeat or timeout)
-                                logger.debug(f"   (Non-heartbeat message: {line})")
+                                # Received other message (e.g., DATA:X) - UART is working
+                                # If we're receiving any messages, mark as online
+                                if last_status_sent != "online":
+                                    logger.info(f"📡 Receiving UART data - marking online")
+                                if send_status_to_azure("online"):
+                                    last_status_sent = "online"
                     
                     except OSError as e:
                         # Handle "device reports readiness but returned no data" error

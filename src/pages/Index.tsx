@@ -1,5 +1,6 @@
 import { LatencyCard } from '@/components/LatencyCard';
 import { StatusPill } from '@/components/StatusPill';
+import { SignalControl } from '@/components/SignalControl';
 
 const Index = () => {
   return (
@@ -8,22 +9,21 @@ const Index = () => {
         {/* Header */}
         <header className="text-center space-y-2">
           <h1 className="text-3xl sm:text-4xl font-bold text-foreground">
-            LatencyNet — Live View
+            STM32 Signal Router
           </h1>
         </header>
 
-        {/* Latency Cards - Vertical Stack */}
+        {/* Status Cards */}
         <div className="space-y-6">
           {/* Main Server shows STM32 connection status */}
           <LatencyCard serverName="Main Server" server="main" />
           
           {/* Raspberry Pi Gateway status */}
           <StatusPill />
-          
-          {/* Other servers (for future boards) */}
-          <LatencyCard serverName="UART Server 2" server="uart" />
-          <LatencyCard serverName="Serial Server 3" server="serial" />
         </div>
+
+        {/* Signal Control */}
+        <SignalControl />
 
         {/* Footer */}
         <footer className="text-center pt-4">

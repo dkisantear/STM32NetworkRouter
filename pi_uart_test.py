@@ -9,8 +9,8 @@ import time
 import sys
 
 # Configuration
-UART_DEVICE = "/dev/ttyAMA0"  # Pi 5 UART device (use /dev/serial0 if /dev/ttyAMA0 doesn't work)
-BAUDRATE = 38400
+UART_DEVICE = "/dev/ttyAMA0"  # Pi 5 UART device
+BAUDRATE = 38400  # Must match STM32 baud rate
 TIMEOUT = 1.0
 
 def main():
