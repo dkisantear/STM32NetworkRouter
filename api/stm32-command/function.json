@@ -5,7 +5,7 @@
       "type": "httpTrigger",
       "direction": "in",
       "name": "req",
-      "methods": ["get", "post"],
+      "methods": ["get", "post", "put"],
       "route": "stm32-command"
     },
     {
@@ -16,4 +16,5 @@
   ],
   "scriptFile": "index.js"
 }
+
 

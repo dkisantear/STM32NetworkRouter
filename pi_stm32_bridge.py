@@ -173,18 +173,38 @@ def main():
                     
                     # Poll for pending commands from Azure (from frontend)
                     if now - last_command_poll_time > COMMAND_POLL_INTERVAL:
-                        commands = get_pending_commands()
-                        for cmd in commands:
-                            command_id = cmd.get("commandId")
-                            value = cmd.get("value")
-                            mode = cmd.get("mode", "uart")
+                        try:
+                            commands = get_pending_commands()
+                            processed_commands = set()  # Track commands we've seen to avoid duplicates
                             
-                            logger.info(f"📨 Processing command from frontend: value={value} mode={mode}")
-                            if send_command_to_stm32(ser, value, mode):
-                                mark_command_sent(command_id)
-                                logger.info(f"✅ Command {command_id} sent successfully to Master STM32")
-                            else:
-                                logger.error(f"❌ Failed to send command {command_id}")
+                            for cmd in commands:
+                                command_id = cmd.get("commandId")
+                                value = cmd.get("value")
+                                mode = cmd.get("mode", "uart")
+                                
+                                # Skip if we've already processed this command
+                                if command_id in processed_commands:
+                                    continue
+                                
+                                logger.info(f"📨 Processing command from frontend: value={value} mode={mode}")
+                                
+                                # Send command to STM32
+                                if send_command_to_stm32(ser, value, mode):
+                                    # Try to mark as sent - if it fails, still log success but don't spam
+                                    if mark_command_sent(command_id):
+                                        logger.info(f"✅ Command {command_id} sent and marked as sent")
+                                    else:
+                                        logger.warning(f"⚠️  Command {command_id} sent but failed to mark in Azure (API may not be deployed)")
+                                    processed_commands.add(command_id)
+                                else:
+                                    logger.error(f"❌ Failed to send command {command_id} to STM32")
+                            
+                            # If no commands, don't log anything (reduce spam)
+                            if commands and len(processed_commands) == 0:
+                                logger.debug(f"⚠️  Received {len(commands)} commands but couldn't process them")
+                        except Exception as e:
+                            logger.debug(f"Error polling commands: {e}")
+                        
                         last_command_poll_time = now
                     
                     # Read data from UART - robust handling of partial/corrupted messages
