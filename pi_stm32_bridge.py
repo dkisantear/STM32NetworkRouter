@@ -15,9 +15,11 @@ import os
 UART_DEVICE = "/dev/ttyAMA0"  # Pi 5 UART device
 UART_BAUDRATE = 38400
 API_URL = "https://blue-desert-0c2a27e1e.3.azurestaticapps.net/api/stm32-status"
+COMMAND_API_URL = "https://blue-desert-0c2a27e1e.3.azurestaticapps.net/api/stm32-command"
 DEVICE_ID = "stm32-master"  # Must match frontend useMasterStatus hook
 TIMEOUT_SECONDS = 10  # If no UART message received in this time, mark as offline
 HEARTBEAT_MESSAGE = "STM32_ALIVE"
+COMMAND_POLL_INTERVAL = 2  # Poll for commands every 2 seconds
 
 # Use home directory for log file (no sudo needed)
 LOG_FILE = os.path.expanduser("~/stm32-bridge.log")
@@ -55,6 +57,58 @@ def send_status_to_azure(status):
         logger.error(f"❌ Failed to send status to Azure: {e}")
         return False
 
+def get_pending_commands():
+    """Poll Azure for pending commands for Master board"""
+    try:
+        response = requests.get(
+            COMMAND_API_URL,
+            params={"deviceId": DEVICE_ID},
+            timeout=5
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data.get("commands", [])
+    except Exception as e:
+        logger.debug(f"Failed to poll commands: {e}")
+        return []
+
+def mark_command_sent(command_id):
+    """Mark a command as sent in Azure"""
+    try:
+        response = requests.put(
+            COMMAND_API_URL,
+            json={"commandId": command_id, "status": "sent"},
+            timeout=5
+        )
+        response.raise_for_status()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to mark command as sent: {e}")
+        return False
+
+def send_command_to_stm32(ser, value, mode):
+    """Send command to Master STM32 via UART2
+    Format: Simple decimal value (0-16) matching DIP switch
+    The Master board will replicate this value on its DIP switch output
+    """
+    if not ser or not ser.is_open:
+        logger.error("❌ Cannot send command: serial port not open")
+        return False
+    
+    try:
+        # Send value as decimal string (0-16) matching DIP switch
+        # Format: "{value}\n" - simple and matches DIP switch range
+        command = f"{value}\n"
+        ser.write(command.encode('utf-8'))
+        logger.info(f"📤 Sent command to Master STM32: value={value} mode={mode} ({repr(command)})")
+        
+        # Small delay to ensure transmission completes
+        time.sleep(0.05)
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to send command to STM32: {e}")
+        return False
+
 def main():
     """Main loop - reads UART and forwards to Azure with robust error recovery"""
     logger.info("=" * 60)
@@ -70,6 +124,7 @@ def main():
     last_message_time = None
     last_status_sent = None
     last_heartbeat_time = time.time()
+    last_command_poll_time = time.time()
     reconnect_delay = 5  # Seconds to wait before reconnecting
     
     while True:  # Outer loop for auto-recovery
@@ -108,9 +163,26 @@ def main():
             # Main read loop
             while True:
                 try:
+                    now = time.time()
+                    
+                    # Poll for pending commands from Azure (from frontend)
+                    if now - last_command_poll_time > COMMAND_POLL_INTERVAL:
+                        commands = get_pending_commands()
+                        for cmd in commands:
+                            command_id = cmd.get("commandId")
+                            value = cmd.get("value")
+                            mode = cmd.get("mode", "uart")
+                            
+                            logger.info(f"📨 Processing command from frontend: value={value} mode={mode}")
+                            if send_command_to_stm32(ser, value, mode):
+                                mark_command_sent(command_id)
+                                logger.info(f"✅ Command {command_id} sent successfully to Master STM32")
+                            else:
+                                logger.error(f"❌ Failed to send command {command_id}")
+                        last_command_poll_time = now
+                    
                     # Send periodic heartbeat status (every 30 seconds) - ALWAYS send, like Pi Gateway
                     # This ensures Master STM32 shows as "online" as long as bridge script is running
-                    now = time.time()
                     if now - last_heartbeat_time > 30:
                         logger.info("💓 Periodic heartbeat - sending online status to Azure")
                         if send_status_to_azure("online"):
