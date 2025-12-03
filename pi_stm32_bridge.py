@@ -108,10 +108,10 @@ def main():
             # Main read loop
             while True:
                 try:
-                    # Send periodic heartbeat status (like Pi Gateway) - sends status every HEARTBEAT_INTERVAL seconds
+                    # Send periodic heartbeat status (every 30 seconds) - ALWAYS send, like Pi Gateway
                     # This ensures Master STM32 shows as "online" as long as bridge script is running
                     now = time.time()
-                    if now - last_heartbeat_time > HEARTBEAT_INTERVAL:
+                    if now - last_heartbeat_time > 30:
                         logger.info("💓 Periodic heartbeat - sending online status to Azure")
                         if send_status_to_azure("online"):
                             last_status_sent = "online"
