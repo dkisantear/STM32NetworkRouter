@@ -108,13 +108,14 @@ def main():
             # Main read loop
             while True:
                 try:
-                    # Send periodic heartbeat status (every 30 seconds) even if no UART messages
+                    # Send periodic heartbeat status (like Pi Gateway) - sends status every HEARTBEAT_INTERVAL seconds
+                    # This ensures Master STM32 shows as "online" as long as bridge script is running
                     now = time.time()
-                    if now - last_heartbeat_time > 30:
-                        if last_status_sent != "online":
-                            logger.info("💓 Periodic heartbeat - sending online status")
-                            if send_status_to_azure("online"):
-                                last_status_sent = "online"
+                    if now - last_heartbeat_time > HEARTBEAT_INTERVAL:
+                        logger.info("💓 Periodic heartbeat - sending online status to Azure")
+                        if send_status_to_azure("online"):
+                            last_status_sent = "online"
+                            logger.info("✅ Heartbeat sent successfully")
                         last_heartbeat_time = now
                     
                     # Read line from UART
@@ -124,17 +125,11 @@ def main():
                         if line:
                             logger.info(f"📥 Received: {repr(line)}")
                             
-                            # Update last_message_time for ANY received message
-                            # This proves UART is working and resets the timeout
-                            last_message_time = time.time()
-                            
                             # Check if it's the expected heartbeat message
                             if HEARTBEAT_MESSAGE in line or line == HEARTBEAT_MESSAGE:
+                                last_message_time = time.time()
+                                
                                 # Send "online" status when we receive a message
-                                if send_status_to_azure("online"):
-                                    last_status_sent = "online"
-                            else:
-                                # Received other message - UART is working, mark as online
                                 if send_status_to_azure("online"):
                                     last_status_sent = "online"
                     
