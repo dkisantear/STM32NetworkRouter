@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { useMasterStatus } from '@/hooks/useMasterStatus';
+import { useSwitchState } from '@/hooks/useSwitchState';
 
-type SendMode = 'serial' | 'uart';
+type SendMode = 'serial' | 'uart' | 'parallel';
 
 export const SignalControl = () => {
   const [value, setValue] = useState<string>('');
@@ -15,6 +16,14 @@ export const SignalControl = () => {
   const [lastSentValue, setLastSentValue] = useState<number | null>(null);
   const { toast } = useToast();
   const masterStatus = useMasterStatus();
+  const switchState = useSwitchState();
+
+  // Sync frontend mode with STM32 switch state
+  useEffect(() => {
+    if (switchState.mode !== 'unknown' && switchState.mode !== sendMode) {
+      setSendMode(switchState.mode as SendMode);
+    }
+  }, [switchState.mode, sendMode]);
 
   const validateValue = (val: string): boolean => {
     const num = parseInt(val, 10);
@@ -126,6 +135,18 @@ export const SignalControl = () => {
           </div>
         </div>
 
+        {/* Current Switch State Display */}
+        {switchState.mode !== 'unknown' && (
+          <div className="px-3 py-2 bg-muted rounded-md">
+            <p className="text-xs text-muted-foreground">
+              Current mode: <span className="text-foreground font-medium">{switchState.mode.toUpperCase()}</span>
+              {switchState.value !== null && (
+                <> | Value: <span className="text-foreground font-medium">{switchState.value}</span></>
+              )}
+            </p>
+          </div>
+        )}
+
         {lastSentValue !== null && (
           <div className="px-3 py-2 bg-muted rounded-md">
             <p className="text-xs text-muted-foreground">
@@ -159,6 +180,18 @@ export const SignalControl = () => {
             disabled={isSending}
           >
             UART
+          </Button>
+          <Button
+            variant={sendMode === 'parallel' ? 'default' : 'outline'}
+            className={cn(
+              'flex-1',
+              sendMode === 'parallel' && 'bg-primary text-primary-foreground',
+              sendMode !== 'parallel' && 'opacity-50'
+            )}
+            onClick={() => setSendMode('parallel')}
+            disabled={isSending}
+          >
+            Parallel
           </Button>
         </div>
 

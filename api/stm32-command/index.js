@@ -30,10 +30,10 @@ module.exports = async function (context, req) {
         return;
       }
 
-      if (mode !== "serial" && mode !== "uart") {
+      if (mode !== "serial" && mode !== "uart" && mode !== "parallel") {
         context.res = {
           status: 400,
-          body: { error: "Mode must be 'serial' or 'uart'" },
+          body: { error: "Mode must be 'serial', 'uart', or 'parallel'" },
           headers: { "Content-Type": "application/json" },
         };
         return;
