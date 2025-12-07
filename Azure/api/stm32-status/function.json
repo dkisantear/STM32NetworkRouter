@@ -5,15 +5,15 @@
       "type": "httpTrigger",
       "direction": "in",
       "name": "req",
-      "methods": ["get", "post"]
+      "methods": ["get", "post"],
+      "route": "stm32-status"
     },
     {
       "type": "http",
       "direction": "out",
       "name": "res"
     }
-  ]
+  ],
+  "scriptFile": "index.js"
 }
-
-
 

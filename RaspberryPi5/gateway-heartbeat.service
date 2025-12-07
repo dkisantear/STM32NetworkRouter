@@ -1,0 +1,20 @@
+[Unit]
+Description=Gateway Heartbeat Service - Sends status to Azure Static Web Apps
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi
+ExecStart=/usr/bin/python3 /home/pi/gateway-heartbeat/pi_heartbeat_automated.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Graceful shutdown - send offline status before stopping
+ExecStop=/bin/sh -c 'curl -X POST https://blue-desert-0c2a27e1e.3.azurestaticapps.net/api/gateway-status -H "Content-Type: application/json" -d "{\"gatewayId\":\"pi5-main\",\"status\":\"offline\"}" || true'
+
+[Install]
+WantedBy=multi-user.target
